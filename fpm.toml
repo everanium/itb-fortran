@@ -1,0 +1,244 @@
+# fpm.toml -- Fortran Package Manager manifest for the ITB Fortran
+# binding. The Makefile under bindings/fortran/ is the primary build
+# entry point; this manifest exists for fpm-driven developer
+# onboarding (`fpm test --compiler gfortran`, `fpm test --compiler
+# ifx`).
+#
+# fpm discovers `src/` automatically as the library source root;
+# every test program is enumerated below as a [[test]] block because
+# fpm 0.13's test discovery defaults to a directory named `test/`,
+# not `tests/`, and globbing is not yet supported inside test blocks.
+# Enumerating each test keeps the canonical test names (mirroring
+# the cross-binding `tests/test_*.f90` shape) without renaming the
+# tests/ directory.
+#
+# `link = ["itb"]` instructs fpm to add `-litb` to every test link
+# line. The libitb shared library must be reachable via either:
+#
+#   * `FPM_LDFLAGS="-L../../dist/linux-amd64 -Wl,-rpath,$PWD/../../dist/linux-amd64"`
+#     exported before invoking fpm (the canonical fpm-side env var
+#     for linker arguments — `LDFLAGS` is not consulted), or
+#   * a system-installed libitb on the linker's default search path.
+#
+# The Makefile (the primary entry point) handles this automatically;
+# the fpm path is documented for developer convenience and is not
+# part of the binding's release surface.
+
+name = "itb-fortran"
+version = "0.1.0"
+license = "MIT"
+author = "ITB project"
+maintainer = "ITB project"
+copyright = "Copyright 2026, ITB project"
+description = "Fortran 2003+ binding for the ITB cipher (libitb c-shared)"
+
+[build]
+auto-executables = false
+auto-tests = false
+auto-examples = false
+module-naming = false
+
+[fortran]
+implicit-typing = false
+implicit-external = false
+source-form = "free"
+
+[library]
+source-dir = "src"
+
+[install]
+library = true
+
+# -----------------------------------------------------------------
+# Test programs -- one [[test]] block per file under tests/.
+#
+# `link = ["itb"]` adds `-litb` to the test binary's link line.
+# `source-dir = "tests"` overrides fpm's default (`test/`) so the
+# canonical `tests/test_*.f90` filenames stay in place.
+# -----------------------------------------------------------------
+
+[[test]]
+name = "test_aescmac"
+source-dir = "tests"
+main = "test_aescmac.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_areion"
+source-dir = "tests"
+main = "test_areion.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_attach_lock_seed"
+source-dir = "tests"
+main = "test_attach_lock_seed.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_auth"
+source-dir = "tests"
+main = "test_auth.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_blake2b"
+source-dir = "tests"
+main = "test_blake2b.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_blake2s"
+source-dir = "tests"
+main = "test_blake2s.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_blake3"
+source-dir = "tests"
+main = "test_blake3.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_blob"
+source-dir = "tests"
+main = "test_blob.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_chacha20"
+source-dir = "tests"
+main = "test_chacha20.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_config"
+source-dir = "tests"
+main = "test_config.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy"
+source-dir = "tests"
+main = "test_easy.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_aescmac"
+source-dir = "tests"
+main = "test_easy_aescmac.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_areion"
+source-dir = "tests"
+main = "test_easy_areion.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_auth"
+source-dir = "tests"
+main = "test_easy_auth.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_blake2b"
+source-dir = "tests"
+main = "test_easy_blake2b.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_blake2s"
+source-dir = "tests"
+main = "test_easy_blake2s.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_blake3"
+source-dir = "tests"
+main = "test_easy_blake3.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_chacha20"
+source-dir = "tests"
+main = "test_easy_chacha20.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_mixed"
+source-dir = "tests"
+main = "test_easy_mixed.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_nonce_sizes"
+source-dir = "tests"
+main = "test_easy_nonce_sizes.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_persistence"
+source-dir = "tests"
+main = "test_easy_persistence.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_roundtrip"
+source-dir = "tests"
+main = "test_easy_roundtrip.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_siphash24"
+source-dir = "tests"
+main = "test_easy_siphash24.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_easy_streams"
+source-dir = "tests"
+main = "test_easy_streams.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_nonce_sizes"
+source-dir = "tests"
+main = "test_nonce_sizes.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_persistence"
+source-dir = "tests"
+main = "test_persistence.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_roundtrip"
+source-dir = "tests"
+main = "test_roundtrip.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_siphash24"
+source-dir = "tests"
+main = "test_siphash24.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_streams"
+source-dir = "tests"
+main = "test_streams.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_streams_auth"
+source-dir = "tests"
+main = "test_streams_auth.f90"
+link = ["itb"]
+
+[[test]]
+name = "test_streams_nonce"
+source-dir = "tests"
+main = "test_streams_nonce.f90"
+link = ["itb"]

@@ -1,0 +1,36 @@
+# Build artefacts (gfortran + ifx parallel build trees).
+build/
+build_ifx/
+build_fpm/
+build_lint/
+build_lint_ifx/
+build_asan/
+build_tsan/
+build_check/
+tests/build/
+bench/build/
+bench/build_ifx/
+bench/bin/
+bench/results/
+
+# Compiled module + object files anywhere under the binding.
+*.mod
+*.smod
+*.o
+*.a
+
+# Sanitizer / coverage output (Phase 8 only).
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Editor scratch.
+*.swp
+*~
+
+# cache.
+build_*/
+
+# Phase-1 verification scratch (deleted before final commit).
+scratch/
