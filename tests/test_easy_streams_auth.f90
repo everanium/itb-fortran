@@ -85,6 +85,7 @@ program test_easy_streams_auth
   use itb_encryptor
   use itb_streams
   use itb_errors
+  use itb_library, only: itb_set_nonce_bits, itb_get_nonce_bits
   use itb_sys, only: itb_easy_parse_chunk_len_c
   use test_easy_streams_auth_mod
   use itb_test_helpers
@@ -100,6 +101,9 @@ program test_easy_streams_auth
   call test_easy_auth_closed_encryptor_preflight()
   call test_easy_auth_chunk_size_zero_rejected()
   call test_easy_auth_stream_prefix_tamper()
+  call test_easy_auth_roundtrip_non_default_nonce_single()
+  call test_easy_auth_roundtrip_non_default_nonce_triple()
+  call test_easy_auth_roundtrip_global_diverges_from_instance()
 
   call test_pass(TEST_NAME)
 
@@ -410,6 +414,165 @@ contains
                                               SMALL_CHUNK, status)
     call assert_status_eq(TEST_NAME, "easy prefix tamper -> MAC fail",   &
                            status, STATUS_MAC_FAILURE)
+
+    call e%destroy()
+    call sib%destroy()
+  end subroutine
+
+  ! Regression: per-instance nonce_bits must drive the auth-stream
+  ! decoder's chunk-length parse, not the process-global setting.
+  ! run_paired_auth_roundtrip_nonce_bits exercises encrypt + decrypt
+  ! with a paired pair of encryptors at the requested per-instance
+  ! nonce-bits value, over a multi-chunk plaintext.
+  subroutine run_paired_auth_roundtrip_nonce_bits(nonce_bits, mode,    &
+                                                    mac_name)
+    integer,      intent(in) :: nonce_bits, mode
+    character(*), intent(in) :: mac_name
+    type(itb_encryptor_t) :: e, sib
+    type(src_t),  target :: src_pt, src_ct
+    type(sink_t), target :: sink_ct, sink_pt
+    integer(itb_byte_kind), target, allocatable :: pt(:)
+    integer(itb_byte_kind), target, allocatable :: ct_buf(:), pt_buf(:)
+    integer(itb_byte_kind), allocatable :: blob(:), pt_recovered(:)
+    integer(itb_size_kind) :: ct_cap, pt_cap
+    procedure(itb_stream_read_fn),  pointer :: rfn => null()
+    procedure(itb_stream_write_fn), pointer :: wfn => null()
+    integer(itb_status_kind) :: status
+    integer :: i, pt_len
+
+    rfn => src_read
+    wfn => sink_write
+
+    call new_itb_encryptor(e,   "blake3", 1024, mac_name, mode)
+    call e%set_nonce_bits(nonce_bits)
+    blob = e%export_state()
+    call new_itb_encryptor(sib, "blake3", 1024, mac_name, mode)
+    call sib%set_nonce_bits(nonce_bits)
+    call sib%import_state(blob)
+
+    ! ~96 KiB plaintext -> multi-chunk wire at SMALL_CHUNK = 4096.
+    pt_len = int(SMALL_CHUNK) * 24 + 17
+    pt = pseudo_payload(pt_len)
+
+    ct_cap = int(pt_len, itb_size_kind) * 6_itb_size_kind +              &
+              262144_itb_size_kind
+    pt_cap = int(pt_len, itb_size_kind) + 1024_itb_size_kind
+    allocate (ct_buf(ct_cap))
+    allocate (pt_buf(pt_cap))
+
+    src_pt%total = int(pt_len, c_size_t); src_pt%pos = 0
+    src_pt%data = c_loc(pt)
+    sink_ct%cap = ct_cap; sink_ct%pos = 0; sink_ct%data = c_loc(ct_buf)
+    call itb_encryptor_stream_encrypt_auth(e, rfn, c_loc(src_pt),         &
+                                              wfn, c_loc(sink_ct),         &
+                                              SMALL_CHUNK, status)
+    call assert_status_ok(TEST_NAME, "non-default nonce_bits encrypt",   &
+                           status)
+
+    src_ct%total = sink_ct%pos; src_ct%pos = 0; src_ct%data = c_loc(ct_buf)
+    sink_pt%cap = pt_cap; sink_pt%pos = 0; sink_pt%data = c_loc(pt_buf)
+    call itb_encryptor_stream_decrypt_auth(sib, rfn, c_loc(src_ct),       &
+                                              wfn, c_loc(sink_pt),         &
+                                              SMALL_CHUNK, status)
+    call assert_status_ok(TEST_NAME, "non-default nonce_bits decrypt",   &
+                           status)
+    call assert_size_eq(TEST_NAME, "non-default nonce_bits length",      &
+                         sink_pt%pos, int(pt_len, itb_size_kind))
+
+    allocate (pt_recovered(int(sink_pt%pos)))
+    do i = 1, int(sink_pt%pos)
+      pt_recovered(i) = pt_buf(i)
+    end do
+    call assert_bytes_eq(TEST_NAME, "non-default nonce_bits roundtrip",  &
+                          pt_recovered, pt)
+
+    call e%destroy()
+    call sib%destroy()
+  end subroutine
+
+  subroutine test_easy_auth_roundtrip_non_default_nonce_single()
+    integer :: nbs(2), k
+    nbs = [256, 512]
+    do k = 1, 2
+      call run_paired_auth_roundtrip_nonce_bits(nbs(k), 1, "")
+    end do
+  end subroutine
+
+  subroutine test_easy_auth_roundtrip_non_default_nonce_triple()
+    integer :: nbs(2), k
+    nbs = [256, 512]
+    do k = 1, 2
+      call run_paired_auth_roundtrip_nonce_bits(nbs(k), 3, "kmac256")
+    end do
+  end subroutine
+
+  ! Pointed regression: pin the process-global at 128 (default) and
+  ! flip the per-instance value to 512. Decryption must still succeed;
+  ! if the auth-stream parser silently consults the global, chunk_len
+  ! mismatches and the round-trip fails.
+  subroutine test_easy_auth_roundtrip_global_diverges_from_instance()
+    type(itb_encryptor_t) :: e, sib
+    type(src_t),  target :: src_pt, src_ct
+    type(sink_t), target :: sink_ct, sink_pt
+    integer(itb_byte_kind), target, allocatable :: pt(:)
+    integer(itb_byte_kind), target, allocatable :: ct_buf(:), pt_buf(:)
+    integer(itb_byte_kind), allocatable :: blob(:), pt_recovered(:)
+    integer(itb_size_kind) :: ct_cap, pt_cap
+    procedure(itb_stream_read_fn),  pointer :: rfn => null()
+    procedure(itb_stream_write_fn), pointer :: wfn => null()
+    integer(itb_status_kind) :: status
+    integer :: i, pt_len
+
+    rfn => src_read
+    wfn => sink_write
+
+    call itb_set_nonce_bits(128)
+    call assert_int_eq(TEST_NAME, "global pinned at 128",                &
+                        itb_get_nonce_bits(), 128)
+
+    call new_itb_encryptor(e,   "blake3", 1024, "", 1)
+    call e%set_nonce_bits(512)
+    blob = e%export_state()
+    call new_itb_encryptor(sib, "blake3", 1024, "", 1)
+    call sib%set_nonce_bits(512)
+    call sib%import_state(blob)
+
+    ! Per-instance set must not leak into the global.
+    call assert_int_eq(TEST_NAME, "global still 128 after per-inst set", &
+                        itb_get_nonce_bits(), 128)
+
+    pt_len = int(SMALL_CHUNK) * 24 + 17
+    pt = pseudo_payload(pt_len)
+
+    ct_cap = int(pt_len, itb_size_kind) * 6_itb_size_kind +              &
+              262144_itb_size_kind
+    pt_cap = int(pt_len, itb_size_kind) + 1024_itb_size_kind
+    allocate (ct_buf(ct_cap))
+    allocate (pt_buf(pt_cap))
+
+    src_pt%total = int(pt_len, c_size_t); src_pt%pos = 0
+    src_pt%data = c_loc(pt)
+    sink_ct%cap = ct_cap; sink_ct%pos = 0; sink_ct%data = c_loc(ct_buf)
+    call itb_encryptor_stream_encrypt_auth(e, rfn, c_loc(src_pt),         &
+                                              wfn, c_loc(sink_ct),         &
+                                              SMALL_CHUNK, status)
+    call assert_status_ok(TEST_NAME, "global divergence encrypt", status)
+
+    src_ct%total = sink_ct%pos; src_ct%pos = 0; src_ct%data = c_loc(ct_buf)
+    sink_pt%cap = pt_cap; sink_pt%pos = 0; sink_pt%data = c_loc(pt_buf)
+    call itb_encryptor_stream_decrypt_auth(sib, rfn, c_loc(src_ct),       &
+                                              wfn, c_loc(sink_pt),         &
+                                              SMALL_CHUNK, status)
+    call assert_status_ok(TEST_NAME, "global divergence decrypt", status)
+    call assert_size_eq(TEST_NAME, "global divergence length",           &
+                         sink_pt%pos, int(pt_len, itb_size_kind))
+
+    allocate (pt_recovered(int(sink_pt%pos)))
+    do i = 1, int(sink_pt%pos)
+      pt_recovered(i) = pt_buf(i)
+    end do
+    call assert_bytes_eq(TEST_NAME, "global divergence roundtrip",       &
+                          pt_recovered, pt)
 
     call e%destroy()
     call sib%destroy()

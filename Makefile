@@ -88,7 +88,8 @@ SRC_FILES = \
     src/itb_cipher.f90     \
     src/itb_encryptor.f90  \
     src/itb_blob.f90       \
-    src/itb_streams.f90
+    src/itb_streams.f90    \
+    src/itb_wrapper.f90
 
 SRC_OBJS = $(patsubst src/%.f90,$(BUILD_DIR)/%.o,$(SRC_FILES))
 
@@ -101,12 +102,14 @@ TEST_BINS = $(patsubst tests/test_%.f90,$(TESTS_BUILD)/test_%,$(TEST_SRCS))
 HELPER_SRC = tests/itb_test_helpers.f90
 HELPER_OBJ = $(TESTS_BUILD)/itb_test_helpers.o
 
-.PHONY: all src tests bench bench-clean clean help
+.PHONY: all src tests bench bench-clean clean help eitb eitb-clean
 all: src
 src: $(SRC_OBJS)
 tests: src $(HELPER_OBJ) $(TEST_BINS)
 bench: src $(BENCH_BIN)/itb-bench-single $(BENCH_BIN)/itb-bench-triple \
-              $(BENCH_BIN)/itb-bench-single-stream $(BENCH_BIN)/itb-bench-triple-stream
+              $(BENCH_BIN)/itb-bench-single-stream $(BENCH_BIN)/itb-bench-triple-stream \
+              $(BENCH_BIN)/itb-bench-wrapper
+# `eitb` target body is declared after EITB_BIN is defined below.
 
 # Pattern rule: src/%.f90 -> build/%.o + build/%.mod. Module files
 # land alongside the object files in $(BUILD_DIR).
@@ -127,6 +130,7 @@ $(BUILD_DIR)/itb_cipher.o:     $(BUILD_DIR)/itb_kinds.o $(BUILD_DIR)/itb_sys.o $
 $(BUILD_DIR)/itb_encryptor.o:  $(BUILD_DIR)/itb_kinds.o $(BUILD_DIR)/itb_sys.o $(BUILD_DIR)/itb_strings.o $(BUILD_DIR)/itb_errors.o
 $(BUILD_DIR)/itb_blob.o:       $(BUILD_DIR)/itb_kinds.o $(BUILD_DIR)/itb_sys.o $(BUILD_DIR)/itb_strings.o $(BUILD_DIR)/itb_errors.o
 $(BUILD_DIR)/itb_streams.o:    $(BUILD_DIR)/itb_kinds.o $(BUILD_DIR)/itb_sys.o $(BUILD_DIR)/itb_seed.o $(BUILD_DIR)/itb_mac.o $(BUILD_DIR)/itb_cipher.o $(BUILD_DIR)/itb_errors.o $(BUILD_DIR)/itb_library.o
+$(BUILD_DIR)/itb_wrapper.o:    $(BUILD_DIR)/itb_kinds.o $(BUILD_DIR)/itb_sys.o $(BUILD_DIR)/itb_strings.o $(BUILD_DIR)/itb_errors.o
 
 # Test helper module compiles into tests/build/. It depends only on
 # itb_kinds + itb_errors from the src tree.
@@ -199,6 +203,17 @@ $(BENCH_BIN)/itb-bench-triple-stream: $(BENCH_BUILD)/bench_triple_stream.o      
 	      $(BENCH_BUILD)/bench_triple_stream.o $(BENCH_BUILD)/bench_common.o            \
 	      $(SRC_OBJS) -o $@ $(LDFLAGS)
 
+# ----- Wrapper bench --------------------------------------------------
+$(BENCH_BUILD)/bench_wrapper.o: bench/bench_wrapper.f90                                    \
+                                $(BENCH_BUILD)/bench_common.o $(SRC_OBJS) | $(BENCH_BUILD)
+	$(FC) $(BENCH_FCFLAGS) $(BENCH_MOD) -I$(BUILD_DIR) -I$(BENCH_BUILD) -c $< -o $@
+
+$(BENCH_BIN)/itb-bench-wrapper: $(BENCH_BUILD)/bench_wrapper.o                              \
+                                $(BENCH_BUILD)/bench_common.o $(SRC_OBJS) | $(BENCH_BIN)
+	$(FC) $(BENCH_FCFLAGS) $(BENCH_MOD) -I$(BUILD_DIR) -I$(BENCH_BUILD)                 \
+	      $(BENCH_BUILD)/bench_wrapper.o $(BENCH_BUILD)/bench_common.o                  \
+	      $(SRC_OBJS) -o $@ $(LDFLAGS)
+
 $(BENCH_BUILD):
 	mkdir -p $(BENCH_BUILD)
 
@@ -207,6 +222,46 @@ $(BENCH_BIN):
 
 bench-clean:
 	rm -rf bench/build bench/build_ifx bench/bin
+
+# ----- eitb runner --------------------------------------------------
+#
+# The eitb runner exercises the full 8-example x 3-cipher matrix on
+# the format-deniability wrapper. sha256.c is shared with the C
+# binding's eitb runner -- compiled here as a plain C TU and linked
+# into the Fortran binary. The C compiler defaults to `cc` (override
+# with CC=...).
+ifeq ($(FC),ifx)
+  EITB_BUILD = eitb/build_ifx
+else
+  EITB_BUILD = eitb/build
+endif
+EITB_BIN     = eitb/bin
+EITB_MOD     = $(if $(filter ifx,$(FC)),-module $(EITB_BUILD),-J $(EITB_BUILD))
+EITB_SHA_DIR = ../c/eitb
+CC          ?= cc
+CFLAGS_EITB ?= -O2 -Wall
+
+eitb: src $(EITB_BIN)/eitb
+
+$(EITB_BUILD)/sha256.o: $(EITB_SHA_DIR)/sha256.c $(EITB_SHA_DIR)/sha256.h | $(EITB_BUILD)
+	$(CC) $(CFLAGS_EITB) -I$(EITB_SHA_DIR) -c $< -o $@
+
+$(EITB_BUILD)/eitb.o: eitb/eitb.f90 $(SRC_OBJS) | $(EITB_BUILD)
+	$(FC) $(FCFLAGS) $(EITB_MOD) -I$(BUILD_DIR) -I$(EITB_BUILD) -c $< -o $@
+
+$(EITB_BIN)/eitb: $(EITB_BUILD)/eitb.o $(EITB_BUILD)/sha256.o $(SRC_OBJS) | $(EITB_BIN)
+	$(FC) $(FCFLAGS) $(EITB_MOD) -I$(BUILD_DIR) -I$(EITB_BUILD) \
+	      $(EITB_BUILD)/eitb.o $(EITB_BUILD)/sha256.o \
+	      $(SRC_OBJS) -o $@ $(LDFLAGS)
+
+$(EITB_BUILD):
+	mkdir -p $(EITB_BUILD)
+
+$(EITB_BIN):
+	mkdir -p $(EITB_BIN)
+
+eitb-clean:
+	rm -rf eitb/build eitb/build_ifx eitb/bin
 
 clean:
 	rm -rf build build_ifx tests/build

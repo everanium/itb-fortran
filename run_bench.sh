@@ -29,6 +29,7 @@
 #   ./run_bench.sh triple           # pass 2 + pass 4 only
 #   ./run_bench.sh --no-lockseed    # pass 1 + pass 2 only
 #   ./run_bench.sh --lockseed-only  # pass 3 + pass 4 only
+#   ./run_bench.sh --wrapper-only   # only the wrapper bench (skip Single/Triple/LockSeed)
 
 set -eu
 set -o pipefail
@@ -61,15 +62,35 @@ run_single=1
 run_triple=1
 run_no_lockseed=1
 run_with_lockseed=1
+wrapper_only=0
 case "${1:-}" in
     single)            run_triple=0;;
     triple)            run_single=0;;
     --no-lockseed)     run_with_lockseed=0;;
     --lockseed-only)   run_no_lockseed=0;;
-    -h|--help)         sed -n '3,33p' "$0"; exit 0;;
+    --wrapper-only)    wrapper_only=1;;
+    -h|--help)         sed -n '3,34p' "$0"; exit 0;;
     "")                ;;
     *)                 echo "unknown option: $1" >&2; exit 2;;
 esac
+
+if [[ $wrapper_only -eq 1 ]]; then
+    if [[ ! -x "$BENCH_BIN_DIR/itb-bench-wrapper" ]]; then
+        echo "==> building wrapper bench binary (FC=${FC:-gfortran})"
+        make bench
+    fi
+    if [[ ! -x "$BENCH_BIN_DIR/itb-bench-wrapper" ]]; then
+        echo "error: itb-bench-wrapper binary missing at $BENCH_BIN_DIR/" >&2
+        echo "       run \`make bench\` first" >&2
+        exit 1
+    fi
+    echo
+    echo "===================================================================="
+    echo "  Wrapper only -- format-deniability bench (skip Single/Triple/LockSeed)"
+    echo "===================================================================="
+    unset ITB_LOCKSEED
+    exec "./$BENCH_BIN_DIR/itb-bench-wrapper"
+fi
 
 run_pass() {
     local label="$1"

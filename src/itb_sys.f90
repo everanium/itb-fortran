@@ -1086,6 +1086,123 @@ module itb_sys
       integer(c_int)             :: rc
     end function
 
+    ! --------------------------------------------------------------
+    ! Format-deniability wrapper (outer CTR cipher)
+    !
+    ! These twelve declarations bind to the libitb wrapper exports
+    ! defined in `cmd/cshared/main.go` under the
+    ! "Format-deniability wrapper" section. Every entry point
+    ! dispatches off a `cipher_name` NUL-terminated string
+    ! ("aes" / "chacha" / "siphash"). The Fortran-side wrapper
+    ! module `itb_wrapper` layers a derived-type / subroutine
+    ! surface on top.
+    ! --------------------------------------------------------------
+
+    function itb_wrapper_key_size_c(cipherName, outSize) &
+        bind(C, name="ITB_WrapperKeySize") result(rc)
+      import
+      type(c_ptr), value         :: cipherName
+      integer(c_size_t)          :: outSize
+      integer(c_int)             :: rc
+    end function
+
+    function itb_wrapper_nonce_size_c(cipherName, outSize) &
+        bind(C, name="ITB_WrapperNonceSize") result(rc)
+      import
+      type(c_ptr), value         :: cipherName
+      integer(c_size_t)          :: outSize
+      integer(c_int)             :: rc
+    end function
+
+    function itb_wrap_c(cipherName, key, keyLen, blob, blobLen, &
+                          out, outCap, outLen) &
+        bind(C, name="ITB_Wrap") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, key, blob, out
+      integer(c_size_t), value   :: keyLen, blobLen, outCap
+      integer(c_size_t)          :: outLen
+      integer(c_int)             :: rc
+    end function
+
+    function itb_unwrap_c(cipherName, key, keyLen, wire, wireLen, &
+                            out, outCap, outLen) &
+        bind(C, name="ITB_Unwrap") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, key, wire, out
+      integer(c_size_t), value   :: keyLen, wireLen, outCap
+      integer(c_size_t)          :: outLen
+      integer(c_int)             :: rc
+    end function
+
+    function itb_wrap_in_place_c(cipherName, key, keyLen, blob, blobLen, &
+                                    outNonce, nonceCap) &
+        bind(C, name="ITB_WrapInPlace") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, key, blob, outNonce
+      integer(c_size_t), value   :: keyLen, blobLen, nonceCap
+      integer(c_int)             :: rc
+    end function
+
+    function itb_unwrap_in_place_c(cipherName, key, keyLen, wire, wireLen) &
+        bind(C, name="ITB_UnwrapInPlace") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, key, wire
+      integer(c_size_t), value   :: keyLen, wireLen
+      integer(c_int)             :: rc
+    end function
+
+    function itb_wrap_stream_writer_init_c(cipherName, key, keyLen,    &
+                                             outNonce, nonceCap, outHandle) &
+        bind(C, name="ITB_WrapStreamWriter_Init") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, key, outNonce
+      integer(c_size_t), value   :: keyLen, nonceCap
+      integer(c_intptr_t)        :: outHandle
+      integer(c_int)             :: rc
+    end function
+
+    function itb_wrap_stream_writer_update_c(handle, src, srcLen, dst, dstCap) &
+        bind(C, name="ITB_WrapStreamWriter_Update") result(rc)
+      import
+      integer(c_intptr_t), value :: handle
+      type(c_ptr), value         :: src, dst
+      integer(c_size_t), value   :: srcLen, dstCap
+      integer(c_int)             :: rc
+    end function
+
+    function itb_wrap_stream_writer_free_c(handle) &
+        bind(C, name="ITB_WrapStreamWriter_Free") result(rc)
+      import
+      integer(c_intptr_t), value :: handle
+      integer(c_int)             :: rc
+    end function
+
+    function itb_unwrap_stream_reader_init_c(cipherName, key, keyLen,   &
+                                               wireNonce, nonceLen, outHandle) &
+        bind(C, name="ITB_UnwrapStreamReader_Init") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, key, wireNonce
+      integer(c_size_t), value   :: keyLen, nonceLen
+      integer(c_intptr_t)        :: outHandle
+      integer(c_int)             :: rc
+    end function
+
+    function itb_unwrap_stream_reader_update_c(handle, src, srcLen, dst, dstCap) &
+        bind(C, name="ITB_UnwrapStreamReader_Update") result(rc)
+      import
+      integer(c_intptr_t), value :: handle
+      type(c_ptr), value         :: src, dst
+      integer(c_size_t), value   :: srcLen, dstCap
+      integer(c_int)             :: rc
+    end function
+
+    function itb_unwrap_stream_reader_free_c(handle) &
+        bind(C, name="ITB_UnwrapStreamReader_Free") result(rc)
+      import
+      integer(c_intptr_t), value :: handle
+      integer(c_int)             :: rc
+    end function
+
   end interface
 
 end module itb_sys

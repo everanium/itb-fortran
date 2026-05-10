@@ -242,3 +242,29 @@ name = "test_streams_nonce"
 source-dir = "tests"
 main = "test_streams_nonce.f90"
 link = ["itb"]
+
+[[test]]
+name = "test_wrapper"
+source-dir = "tests"
+main = "test_wrapper.f90"
+link = ["itb"]
+
+# -----------------------------------------------------------------
+# Format-deniability wrapper bench + eitb runner.
+#
+# fpm registers each as a [[executable]] target. The eitb runner
+# additionally requires the SHA-256 helper from the C binding's eitb
+# directory; since fpm cannot mix C / Fortran sources in one target,
+# the canonical build path for the eitb binary is the Makefile
+# (`make eitb && ./eitb/bin/eitb`). The fpm `eitb` executable below
+# is provided for fpm-driven discovery only and will fail to link
+# without the orchestrator pre-building eitb/build/sha256.o and
+# adding it to FPM_LDFLAGS.
+# -----------------------------------------------------------------
+
+[[executable]]
+name = "itb-bench-wrapper"
+source-dir = "bench"
+main = "bench_wrapper.f90"
+link = ["itb"]
+

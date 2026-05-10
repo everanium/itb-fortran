@@ -482,7 +482,7 @@ contains
   !
   ! Capacity is pre-allocated from the same formula
   ! `max(131072, plen + plen / 4 + 131072)` used by the Easy Mode
-  ! single-shot encrypt at `itb_enc_encrypt`. The 1.25x multiplier
+  ! Single Message encrypt at `itb_enc_encrypt`. The 1.25x multiplier
   ! plus 128 KiB pad covers every cell in the mode / nonce-bits /
   ! barrier-fill matrix; the rare `STATUS_BUFFER_TOO_SMALL` from the
   ! first call surfaces the libitb-reported required size in `need`,
@@ -2190,7 +2190,11 @@ contains
             hdr(i) = accum(i)
           end do
           chunk_len = 0_itb_size_kind
-          rc = itb_parse_chunk_len_c(c_loc(hdr), header_size, chunk_len)
+          ! Per-encryptor parse: routes through ITB_Easy_ParseChunkLen so
+          ! the chunk_len calculation honours the per-instance nonce_bits
+          ! captured at construction time, not the process-global setting.
+          rc = itb_easy_parse_chunk_len_c(enc%raw_handle(),                &
+                                            c_loc(hdr), header_size, chunk_len)
           if (rc /= STATUS_OK) then
             status = rc
             return
@@ -2277,7 +2281,11 @@ contains
           hdr(i) = accum(i)
         end do
         chunk_len = 0_itb_size_kind
-        rc = itb_parse_chunk_len_c(c_loc(hdr), header_size, chunk_len)
+        ! Per-encryptor parse: routes through ITB_Easy_ParseChunkLen so
+        ! the chunk_len calculation honours the per-instance nonce_bits
+        ! captured at construction time, not the process-global setting.
+        rc = itb_easy_parse_chunk_len_c(enc%raw_handle(),                 &
+                                          c_loc(hdr), header_size, chunk_len)
         if (rc /= STATUS_OK) then
           status = rc
           return

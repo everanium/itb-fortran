@@ -90,11 +90,18 @@ A minimal "encrypt one buffer in memory" snippet:
 program demo_encrypt
   use, intrinsic :: iso_c_binding, only: c_int8_t
   use itb_encryptor, only: itb_encryptor_t, new_itb_encryptor
+  use itb_wrapper,   only: itb_wrap_in_place, itb_unwrap_in_place,            &
+                           itb_wrapper_generate_key,                            &
+                           ITB_WRAPPER_CIPHER_AES_128_CTR
+  use itb_kinds,     only: itb_byte_kind, itb_status_kind
+  use itb_errors,    only: STATUS_OK
   implicit none
   type(itb_encryptor_t)               :: enc
-  integer(c_int8_t), allocatable      :: ct(:), pt(:)
+  integer(c_int8_t), allocatable      :: ct(:), pt(:), wire(:)
+  integer(itb_byte_kind), allocatable, target :: outerKey(:), nonce(:)
   character(*), parameter             :: msg = "hello, archive"
-  integer :: i
+  integer :: i, body_first, nlen, ct_len
+  integer(itb_status_kind) :: status
 
   allocate (pt(len(msg)))
   do i = 1, len(msg)
@@ -103,8 +110,27 @@ program demo_encrypt
 
   call new_itb_encryptor(enc, "blake3", 1024, "hmac-blake3", 1)
   ct = enc%encrypt_auth(pt)
-  pt = enc%decrypt_auth(ct)
+  ct_len = size(ct)
+
+  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+  call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
+
+  ! Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
+  call itb_wrap_in_place(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, ct, nonce, status)
+  nlen = size(nonce)
+  allocate (wire(nlen + ct_len))
+  wire(1:nlen) = nonce(:)
+  wire(nlen + 1 : nlen + ct_len) = ct(:)
+
+  ! Receiver: strip nonce + XOR-decrypt the body in place; body_first
+  ! marks the first decrypted-payload byte (1-based).
+  call itb_unwrap_in_place(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, wire,    &
+                           body_first, status)
+  pt = enc%decrypt_auth(wire(body_first : size(wire)))
   call enc%destroy()
+  if (allocated(outerKey)) deallocate (outerKey)
+  if (allocated(nonce))    deallocate (nonce)
+  if (allocated(wire))     deallocate (wire)
 end program
 ```
 
@@ -150,7 +176,11 @@ the binding does not interpret.
 ```fortran
 type(itb_seed_t)         :: noise, data, start
 type(itb_mac_t)          :: mac
-integer(itb_byte_kind), target :: mac_key(32)
+type(itb_wrap_stream_writer_t)  :: ww
+integer(itb_byte_kind), target  :: mac_key(32)
+integer(itb_byte_kind), allocatable, target :: outerKey(:), nonce(:)
+integer(itb_byte_kind), allocatable, target :: inner_buf(:), wire(:)
+integer(itb_status_kind) :: status
 
 call new_itb_seed(noise, "areion512", 1024)
 call new_itb_seed(data,  "areion512", 1024)
@@ -158,10 +188,26 @@ call new_itb_seed(start, "areion512", 1024)
 call random_mac_key(mac_key)              ! 32 bytes from /dev/urandom
 call new_itb_mac(mac, "hmac-blake3", mac_key)
 
+! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
+
+! Encrypt the inner ITB stream into an in-memory buffer first, then
+! wrap the entire transcript end-to-end through one keystream session.
 src_fp = c_fopen("/tmp/64mb.src" // c_null_char, "rb" // c_null_char)
-dst_fp = c_fopen("/tmp/64mb.enc" // c_null_char, "wb" // c_null_char)
 call itb_stream_encrypt_auth(noise, data, start, mac,                    &
-      rfn, src_fp, wfn, dst_fp, 16777216_itb_size_kind, status)
+      rfn, src_fp, mem_wfn, c_loc(inner_sink),                            &
+      16777216_itb_size_kind, status)
+
+! Format-deniability ITB masking via outer-cipher streaming wrapper (AES-128-CTR) - same ~0% overhead in stream mode (Recommended in every case).
+call itb_wrap_stream_writer_new(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, &
+                                  ww, nonce, status)
+allocate (wire(size(nonce) + size(inner_buf)))
+wire(1:size(nonce)) = nonce(:)
+call ww%update(inner_buf, wire(size(nonce) + 1 : ), status)
+call ww%destroy()
+
+dst_fp = c_fopen("/tmp/64mb.enc" // c_null_char, "wb" // c_null_char)
+call write_to_fp(dst_fp, wire, size(wire))   ! caller-side libc fwrite helper
 ```
 
 **Build + run:**
@@ -199,6 +245,7 @@ use, intrinsic :: iso_c_binding
 use itb_kinds
 use itb_encryptor
 use itb_streams
+use itb_wrapper
 use itb_errors, only: STATUS_OK
 
 ! libc bindings used for file I/O (declared in main_mod, omitted here).
@@ -206,20 +253,39 @@ use itb_errors, only: STATUS_OK
 
 type(c_ptr) :: src_fp, dst_fp
 procedure(itb_stream_read_fn),  pointer :: rfn => null()
-procedure(itb_stream_write_fn), pointer :: wfn => null()
-type(itb_encryptor_t)    :: enc
+procedure(itb_stream_write_fn), pointer :: wfn => null(), mem_wfn => null()
+type(itb_encryptor_t)           :: enc
+type(itb_wrap_stream_writer_t)  :: ww
+integer(itb_byte_kind), allocatable, target :: outerKey(:), nonce(:)
+integer(itb_byte_kind), allocatable, target :: inner_buf(:), wire(:)
 integer(itb_status_kind) :: status
 
 rfn => file_read
 wfn => file_write
+mem_wfn => mem_write   ! fills inner_buf via grow-buffer ctx
 
 call new_itb_encryptor(enc, "areion512", 1024, "hmac-blake3", 1)
 
+! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
+
+! Encrypt the inner ITB stream into an in-memory buffer first.
 src_fp = c_fopen("/tmp/64mb.src" // c_null_char, "rb" // c_null_char)
-dst_fp = c_fopen("/tmp/64mb.enc" // c_null_char, "wb" // c_null_char)
-call itb_encryptor_stream_encrypt_auth(enc, rfn, src_fp, wfn, dst_fp,    &
+call itb_encryptor_stream_encrypt_auth(enc, rfn, src_fp, mem_wfn,        &
+                                       c_loc(inner_sink),                 &
                                        16777216_itb_size_kind, status)
 if (status /= STATUS_OK) error stop "encrypt failed"
+
+! Format-deniability ITB masking via outer-cipher streaming wrapper (AES-128-CTR) - same ~0% overhead in stream mode (Recommended in every case).
+call itb_wrap_stream_writer_new(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, &
+                                  ww, nonce, status)
+allocate (wire(size(nonce) + size(inner_buf)))
+wire(1:size(nonce)) = nonce(:)
+call ww%update(inner_buf, wire(size(nonce) + 1 : ), status)
+call ww%destroy()
+
+dst_fp = c_fopen("/tmp/64mb.enc" // c_null_char, "wb" // c_null_char)
+call write_to_fp(dst_fp, wire, size(wire))   ! caller-side libc fwrite helper
 ```
 
 **Build + run:**
@@ -293,6 +359,11 @@ program hdf5_encrypt_archive
   use itb_seed,    only: itb_seed_t, new_itb_seed
   use itb_mac,     only: itb_mac_t, new_itb_mac
   use itb_streams, only: itb_stream_encrypt_auth
+  use itb_wrapper, only: itb_wrap_stream_writer_t,                            &
+                          itb_wrap_stream_writer_new,                          &
+                          itb_wrapper_generate_key,                            &
+                          ITB_WRAPPER_CIPHER_AES_128_CTR
+  use itb_kinds,   only: itb_byte_kind, itb_status_kind
   use itb_errors,  only: STATUS_OK
   implicit none
 
@@ -303,17 +374,20 @@ program hdf5_encrypt_archive
   type, bind(C) :: h5_sink_state
     integer(c_int)     :: dataset_id
     integer(c_int64_t) :: offset
+    type(c_ptr)        :: ww_handle      ! WrapStreamWriter handle (opaque c_ptr)
   end type
 
   type(nc_source_state), target :: src
   type(h5_sink_state),   target :: dst
   type(itb_seed_t)              :: noise, data, start
   type(itb_mac_t)               :: mac
+  type(itb_wrap_stream_writer_t):: ww
   integer(c_int8_t)             :: mac_key(32)
+  integer(itb_byte_kind), allocatable, target :: outerKey(:), nonce(:)
   procedure(itb_stream_read_fn),  pointer :: rd
   procedure(itb_stream_write_fn), pointer :: wr
   integer(c_size_t), parameter :: chunk_size = 16_c_size_t * 1024 * 1024
-  integer                      :: status
+  integer(itb_status_kind)     :: status
 
   ! Fill mac_key from /dev/urandom in real code; zero key here is
   ! illustrative only.
@@ -331,6 +405,16 @@ program hdf5_encrypt_archive
   dst%dataset_id = create_h5_dataset("output.h5.itb")
   dst%offset     = 0_c_int64_t
 
+  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+  call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
+
+  ! Format-deniability ITB masking via outer-cipher streaming wrapper (AES-128-CTR) - same ~0% overhead in stream mode (Recommended in every case).
+  call itb_wrap_stream_writer_new(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey,   &
+                                    ww, nonce, status)
+  call hdf5_write_raw(dst%dataset_id, dst%offset, nonce, size(nonce))
+  dst%offset = dst%offset + int(size(nonce), c_int64_t)
+  dst%ww_handle = ww%raw_handle()    ! sink callback feeds bytes through ww%update
+
   rd => netcdf_read_chunk
   wr => hdf5_write_chunk
 
@@ -339,10 +423,13 @@ program hdf5_encrypt_archive
                                 chunk_size, status)
   if (status /= STATUS_OK) call halt_on_status(status)
 
+  call ww%destroy()
   call mac%destroy()
   call start%destroy()
   call data%destroy()
   call noise%destroy()
+  if (allocated(outerKey)) deallocate (outerKey)
+  if (allocated(nonce))    deallocate (nonce)
 contains
 
   function netcdf_read_chunk(user_ctx, buf, cap, out_n) bind(C) result(rc)
@@ -427,11 +514,17 @@ authenticated-mode overhead across the Easy Mode bench surface.
 program demo_easy
   use, intrinsic :: iso_c_binding, only: c_int8_t
   use itb_encryptor, only: itb_encryptor_t, new_itb_encryptor
+  use itb_wrapper,   only: itb_wrap_in_place, itb_unwrap_in_place,            &
+                           itb_wrapper_generate_key,                            &
+                           ITB_WRAPPER_CIPHER_AES_128_CTR
+  use itb_kinds,     only: itb_byte_kind, itb_status_kind
   implicit none
   type(itb_encryptor_t)         :: enc, dec
-  integer(c_int8_t), allocatable :: blob(:), ct(:), pt(:)
+  integer(c_int8_t), allocatable :: blob(:), ct(:), pt(:), wire(:)
+  integer(itb_byte_kind), allocatable, target :: outerKey(:), nonce(:)
   character(*), parameter        :: msg = "any text or binary data"
-  integer :: i
+  integer :: i, body_first, nlen, ct_len
+  integer(itb_status_kind) :: status
 
   allocate (pt(len(msg)))
   do i = 1, len(msg); pt(i) = transfer(msg(i:i), 0_c_int8_t); end do
@@ -446,14 +539,31 @@ program demo_easy
 
   blob = enc%export_state()              ! persistence: keys + components + MAC key
   ct   = enc%encrypt_auth(pt)            ! 32-byte tag embedded inside the container
+  ct_len = size(ct)
 
-  ! Receiver -- construct a matching encryptor and import the blob.
+  ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB inner PRF + seeds keep CSPRNG-fresh randomness per call.
+  call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
+
+  ! Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
+  call itb_wrap_in_place(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, ct, nonce, status)
+  nlen = size(nonce)
+  allocate (wire(nlen + ct_len))
+  wire(1:nlen) = nonce(:)
+  wire(nlen + 1 : nlen + ct_len) = ct(:)
+
+  ! Receiver -- strip nonce + XOR-decrypt body in place; construct a
+  ! matching encryptor and import the blob.
+  call itb_unwrap_in_place(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, wire,    &
+                           body_first, status)
   call new_itb_encryptor(dec, "areion512", 2048, "hmac-blake3", 1)
   call dec%import_state(blob)            ! restores keys + per-instance config
-  pt = dec%decrypt_auth(ct)
+  pt = dec%decrypt_auth(wire(body_first : size(wire)))
 
   call dec%destroy()
   call enc%destroy()
+  if (allocated(outerKey)) deallocate (outerKey)
+  if (allocated(nonce))    deallocate (nonce)
+  if (allocated(wire))     deallocate (wire)
 end program
 ```
 

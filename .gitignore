@@ -12,6 +12,8 @@ bench/build/
 bench/build_ifx/
 bench/bin/
 bench/results/
+eitb/bin/
+eitb/build/
 
 # Compiled module + object files anywhere under the binding.
 *.mod
