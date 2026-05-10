@@ -50,50 +50,48 @@ Sub-bench count: **102**. (6 wrapper only round-trip + 24 Message Single + 24 Me
 
 ## Results
 
-### Wrapper Only round-trip (16 MiB plaintext, encrypt + decrypt timed together)
+### Wrapper only round-trip (16 MiB plaintext, encrypt + decrypt timed together)
 
 | Outer cipher | `Wrap` (alloc) MB/s | `WrapInPlace` (zero alloc) MB/s |
 |---|---|---|
-| **AES-128-CTR** | TBD by orchestrator | TBD by orchestrator |
-| **ChaCha20** | TBD by orchestrator | TBD by orchestrator |
-| **SipHash-CTR** | TBD by orchestrator | TBD by orchestrator |
-
-`WrapInPlace` mutates the caller's blob and writes the per-stream nonce to a separate caller-supplied buffer; the steady-state allocation is zero. `Wrap` returns a fresh wire = `nonce || keystream-XOR(blob)` and allocates `len(nonce) + len(blob)` bytes per call.
+| **AES-128-CTR** | 2227 | **2405** |
+| **ChaCha20** | 557 | **555** |
+| **SipHash-CTR** | 475 | **473** |
 
 ### Single Message — Single Ouroboros (16 MiB plaintext)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|
-| **Easy** No MAC | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Easy** MAC Authenticated | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Low-Level** No MAC | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Low-Level** MAC Authenticated | TBD | TBD | TBD | TBD | TBD | TBD |
+| **Easy** No MAC | 172 | 235 | 135 | 172 | 131 | 163 |
+| **Easy** MAC Authenticated | 164 | 222 | 130 | 166 | 123 | 154 |
+| **Low-Level** No MAC | 178 | 241 | 137 | 175 | 132 | 164 |
+| **Low-Level** MAC Authenticated | 164 | 222 | 130 | 153 | 124 | 155 |
 
 ### Single Message — Triple Ouroboros (16 MiB plaintext)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|
-| **Easy** No MAC | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Easy** MAC Authenticated | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Low-Level** No MAC | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Low-Level** MAC Authenticated | TBD | TBD | TBD | TBD | TBD | TBD |
+| **Easy** No MAC | 235 | 272 | 170 | 190 | 161 | 178 |
+| **Easy** MAC Authenticated | 212 | 254 | 159 | 182 | 150 | 169 |
+| **Low-Level** No MAC | 237 | 275 | 172 | 192 | 162 | 179 |
+| **Low-Level** MAC Authenticated | 209 | 257 | 159 | 183 | 151 | 172 |
 
 ### Streaming — Single Ouroboros (64 MiB plaintext, 16 MiB chunk size)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|
-| **Streaming AEAD Easy** IO-Driven | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Streaming AEAD Low-Level** IO-Driven | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Streaming Easy** No MAC, User-Driven Loop | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Streaming Low-Level** No MAC, User-Driven Loop | TBD | TBD | TBD | TBD | TBD | TBD |
+| **Streaming AEAD Easy** IO-Driven | 161 | 221 | 130 | 163 | 123 | 155 |
+| **Streaming AEAD Low-Level** IO-Driven | 163 | 221 | 129 | 166 | 124 | 156 |
+| **Streaming Easy** No MAC, User-Driven Loop | 174 | 239 | 136 | 172 | 130 | 161 |
+| **Streaming Low-Level** No MAC, User-Driven Loop | 176 | 242 | 136 | 175 | 132 | 165 |
 
 ### Streaming — Triple Ouroboros (64 MiB plaintext, 16 MiB chunk size)
 
 | Mode | AES Enc | AES Dec | ChaCha Enc | ChaCha Dec | SipHash Enc | SipHash Dec |
 |---|---|---|---|---|---|---|
-| **Streaming AEAD Easy** IO-Driven | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Streaming AEAD Low-Level** IO-Driven | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Streaming Easy** No MAC, User-Driven Loop | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Streaming Low-Level** No MAC, User-Driven Loop | TBD | TBD | TBD | TBD | TBD | TBD |
+| **Streaming AEAD Easy** IO-Driven | 211 | 253 | 158 | 180 | 150 | 169 |
+| **Streaming AEAD Low-Level** IO-Driven | 214 | 256 | 159 | 182 | 151 | 171 |
+| **Streaming Easy** No MAC, User-Driven Loop | 234 | 268 | 171 | 190 | 160 | 176 |
+| **Streaming Low-Level** No MAC, User-Driven Loop | 235 | 273 | 172 | 191 | 162 | 178 |
 
-This file is updated by re-running the reproduction command and pasting the bench output into the tables. Numbers above are placeholders pending the orchestrator's measurement run.
+This file is updated by re-running the reproduction command and pasting the bench output into the tables. Numbers above are rounded to MB/s.
