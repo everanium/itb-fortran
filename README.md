@@ -134,7 +134,7 @@ program demo_encrypt
   ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
   call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
-  ! Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
+  ! Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR) ~0% overhead (Recommended in every case).
   call itb_wrap_in_place(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, ct, nonce, status)
   nlen = size(nonce)
   allocate (wire(nlen + ct_len))
@@ -231,7 +231,7 @@ call itb_stream_encrypt_auth(noise, data, start, mac,                    &
       rfn, src_fp, mem_wfn, c_loc(inner_sink),                            &
       16777216_itb_size_kind, status)
 
-! Format-deniability ITB masking via outer-cipher streaming wrapper (AES-128-CTR) - same ~0% overhead in stream mode (Recommended in every case).
+! Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR) ~0% overhead (Recommended in every case).
 call itb_wrap_stream_writer_new(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, &
                                   ww, nonce, status)
 allocate (wire(size(nonce) + size(inner_buf)))
@@ -309,7 +309,7 @@ call itb_encryptor_stream_encrypt_auth(enc, rfn, src_fp, mem_wfn,        &
                                        16777216_itb_size_kind, status)
 if (status /= STATUS_OK) error stop "encrypt failed"
 
-! Format-deniability ITB masking via outer-cipher streaming wrapper (AES-128-CTR) - same ~0% overhead in stream mode (Recommended in every case).
+! Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR) ~0% overhead (Recommended in every case).
 call itb_wrap_stream_writer_new(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, &
                                   ww, nonce, status)
 allocate (wire(size(nonce) + size(inner_buf)))
@@ -441,7 +441,7 @@ program hdf5_encrypt_archive
   ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
   call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
-  ! Format-deniability ITB masking via outer-cipher streaming wrapper (AES-128-CTR) - same ~0% overhead in stream mode (Recommended in every case).
+  ! Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR) ~0% overhead (Recommended in every case).
   call itb_wrap_stream_writer_new(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey,   &
                                     ww, nonce, status)
   call hdf5_write_raw(dst%dataset_id, dst%offset, nonce, size(nonce))
@@ -577,7 +577,7 @@ program demo_easy
   ! Outer cipher key - preferred surface for HKDF / ML-KEM / key-rotation policy in user-side application. ITB Inner seeds + PRF key keep as CSPRNG derived.
   call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, status)
 
-  ! Format-deniability ITB masking through outer cipher AES-128-CTR with ~0% overhead over ITB Encrypt / Decrypt (Recommended in every case).
+  ! Format-deniability ITB masking via outer-cipher wrapper (AES-128-CTR) ~0% overhead (Recommended in every case).
   call itb_wrap_in_place(ITB_WRAPPER_CIPHER_AES_128_CTR, outerKey, ct, nonce, status)
   nlen = size(nonce)
   allocate (wire(nlen + ct_len))
