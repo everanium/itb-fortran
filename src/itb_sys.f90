@@ -169,6 +169,18 @@ module itb_sys
       integer(c_int)             :: n
     end function
 
+    function itb_set_memory_limit_c(limit) bind(C, name="ITB_SetMemoryLimit") result(prev)
+      import
+      integer(c_int64_t), value  :: limit
+      integer(c_int64_t)         :: prev
+    end function
+
+    function itb_set_gc_percent_c(pct) bind(C, name="ITB_SetGCPercent") result(prev)
+      import
+      integer(c_int), value      :: pct
+      integer(c_int)             :: prev
+    end function
+
     ! --------------------------------------------------------------
     ! Sizes + chunk-length parser
     ! --------------------------------------------------------------

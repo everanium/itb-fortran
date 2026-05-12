@@ -51,6 +51,8 @@ module itb_library
   public :: itb_set_max_workers, itb_get_max_workers
   public :: itb_set_nonce_bits, itb_get_nonce_bits
   public :: itb_set_barrier_fill, itb_get_barrier_fill
+  public :: itb_set_memory_limit
+  public :: itb_set_gc_percent
 
 contains
 
@@ -273,6 +275,29 @@ contains
   function itb_get_barrier_fill() result(n)
     integer(itb_int32_kind) :: n
     n = itb_get_barrier_fill_c()
+  end function
+
+  ! Configures the Go runtime's heap-size soft limit (bytes). Pass -1
+  ! (or any negative value) to query the current limit without changing
+  ! it; the previous limit is returned. Setter calls override any
+  ! ITB_GOMEMLIMIT env var set at libitb load time.
+  function itb_set_memory_limit (limit) result (prev)
+     use iso_c_binding, only: c_int64_t
+     integer(c_int64_t), intent(in), value :: limit
+     integer(c_int64_t)                    :: prev
+     prev = itb_set_memory_limit_c (limit)
+  end function
+
+  ! Configures the Go runtime's GC trigger percentage. The default is
+  ! 100 (GC fires at +100% heap growth); lower values trigger GC more
+  ! aggressively. Pass -1 (or any negative value) to query the current
+  ! value without changing it; the previous value is returned. Setter
+  ! calls override any ITB_GOGC env var set at libitb load time.
+  function itb_set_gc_percent (pct) result (prev)
+     use iso_c_binding, only: c_int
+     integer(c_int), intent(in), value :: pct
+     integer(c_int)                    :: prev
+     prev = itb_set_gc_percent_c (pct)
   end function
 
 end module itb_library
