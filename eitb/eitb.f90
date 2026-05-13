@@ -1,6 +1,6 @@
 ! eitb.f90 -- Fortran-side eitb matrix runner.
 !
-! Mirrors `cmd/eitb/main.go` for the Fortran binding. Eight examples
+! Mirrors `tools/eitb/main.go` for the Fortran binding. Eight examples
 ! crossed with three outer ciphers (aes / chacha / siphash) yields a
 ! 24-cell PASS/FAIL matrix. Every cell encrypts a CSPRNG plaintext
 ! (1024 bytes for single-message; 65536 bytes for streaming),
