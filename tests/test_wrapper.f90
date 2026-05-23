@@ -45,6 +45,7 @@ program test_wrapper
 
   call test_size_accessors()
   call test_generate_key()
+  call test_derive_key()
   call test_wrap_unwrap_roundtrip()
   call test_wrap_unwrap_in_place_roundtrip()
   call test_stream_roundtrip()
@@ -121,6 +122,52 @@ contains
       call assert_true(TEST_NAME, "consecutive keys differ", differ)
       deallocate (key1, key2)
     end do
+  end subroutine
+
+  ! Deterministic key derivation from a 32-byte master (a stand-in for
+  ! an ML-KEM shared secret; the binding ships no KEM). Per cipher the
+  ! derived key is length-correct, two derivations from the same
+  ! (cipher, master) agree, and the key drives a full wrap / unwrap
+  ! round-trip.
+  subroutine test_derive_key()
+    integer :: i, j, nlen
+    integer(itb_byte_kind), allocatable :: master(:)
+    integer(itb_byte_kind), allocatable :: key1(:), key2(:)
+    integer(itb_byte_kind), allocatable :: plaintext(:), wire(:), recovered(:)
+    integer(itb_status_kind) :: rc
+    logical :: same
+    master = token_bytes(32)
+    do i = 1, size(CIPHERS)
+      call itb_wrapper_derive_key(CIPHERS(i), master, key1, rc)
+      call assert_status_ok(TEST_NAME, "derive_key first", rc)
+      call assert_int_eq(TEST_NAME, "derived key length",                    &
+                          size(key1), EXPECTED_KEY_LEN(i))
+      ! Determinism: same (cipher, master) yields the same key.
+      call itb_wrapper_derive_key(CIPHERS(i), master, key2, rc)
+      call assert_status_ok(TEST_NAME, "derive_key second", rc)
+      same = size(key1) == size(key2)
+      if (same) then
+        do j = 1, size(key1)
+          if (key1(j) /= key2(j)) then
+            same = .false.
+            exit
+          end if
+        end do
+      end if
+      call assert_true(TEST_NAME, "derive_key deterministic", same)
+      ! The derived key round-trips through wrap / unwrap.
+      call itb_wrapper_nonce_size(CIPHERS(i), nlen, rc)
+      call assert_status_ok(TEST_NAME, "nonce_size derive", rc)
+      plaintext = token_bytes(1024)
+      call itb_wrap(CIPHERS(i), key1, plaintext, wire, rc)
+      call assert_status_ok(TEST_NAME, "wrap with derived key", rc)
+      call itb_unwrap(CIPHERS(i), key1, wire, recovered, rc)
+      call assert_status_ok(TEST_NAME, "unwrap with derived key", rc)
+      call assert_bytes_eq(TEST_NAME, "derived key roundtrip bytes",         &
+                            recovered, plaintext)
+      deallocate (key1, key2, plaintext, wire, recovered)
+    end do
+    deallocate (master)
   end subroutine
 
   subroutine test_wrap_unwrap_roundtrip()

@@ -1105,7 +1105,7 @@ module itb_sys
     ! defined in `cmd/cshared/main.go` under the
     ! "Format-deniability wrapper" section. Every entry point
     ! dispatches off a `cipher_name` NUL-terminated string
-    ! ("aes" / "chacha" / "siphash"). The Fortran-side wrapper
+    ! ("aescmac" / "chacha20" / "siphash24"). The Fortran-side wrapper
     ! module `itb_wrapper` layers a derived-type / subroutine
     ! surface on top.
     ! --------------------------------------------------------------
@@ -1123,6 +1123,16 @@ module itb_sys
       import
       type(c_ptr), value         :: cipherName
       integer(c_size_t)          :: outSize
+      integer(c_int)             :: rc
+    end function
+
+    function itb_wrapper_derive_key_c(cipherName, master, masterLen, &
+                                        out, outCap, outLen) &
+        bind(C, name="ITB_WrapperDeriveKey") result(rc)
+      import
+      type(c_ptr), value         :: cipherName, master, out
+      integer(c_size_t), value   :: masterLen, outCap
+      integer(c_size_t)          :: outLen
       integer(c_int)             :: rc
     end function
 

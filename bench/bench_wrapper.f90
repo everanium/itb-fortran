@@ -187,8 +187,8 @@ program bench_wrapper
       ITB_WRAPPER_CIPHER_AES_128_CTR,                                          &
       ITB_WRAPPER_CIPHER_CHACHA20,                                             &
       ITB_WRAPPER_CIPHER_SIPHASH24]
-  character(len=8), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
-      [character(len=8) :: "aes", "chacha", "siphash"]
+  character(len=9), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
+      [character(len=9) :: "aescmac", "chacha20", "siphash24"]
 
   ! Per-mode label tables -- indexed by mode 1..4 in the canonical
   ! Easy-NoMAC / Easy-Auth / LowLevel-NoMAC / LowLevel-Auth order

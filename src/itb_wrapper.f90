@@ -54,6 +54,7 @@
 module itb_wrapper
   use itb_kinds
   use itb_sys, only: itb_wrapper_key_size_c, itb_wrapper_nonce_size_c,    &
+                       itb_wrapper_derive_key_c,                               &
                        itb_wrap_c, itb_unwrap_c,                              &
                        itb_wrap_in_place_c, itb_unwrap_in_place_c,           &
                        itb_wrap_stream_writer_init_c,                          &
@@ -79,6 +80,7 @@ module itb_wrapper
   public :: itb_wrapper_key_size
   public :: itb_wrapper_nonce_size
   public :: itb_wrapper_generate_key
+  public :: itb_wrapper_derive_key
   public :: itb_wrap
   public :: itb_unwrap
   public :: itb_wrap_in_place
@@ -138,9 +140,9 @@ contains
     integer, intent(in) :: cipher
     character(:), allocatable :: name
     select case (cipher)
-    case (ITB_WRAPPER_CIPHER_AES_128_CTR); name = "aes"
-    case (ITB_WRAPPER_CIPHER_CHACHA20);    name = "chacha"
-    case (ITB_WRAPPER_CIPHER_SIPHASH24);   name = "siphash"
+    case (ITB_WRAPPER_CIPHER_AES_128_CTR); name = "aescmac"
+    case (ITB_WRAPPER_CIPHER_CHACHA20);    name = "chacha20"
+    case (ITB_WRAPPER_CIPHER_SIPHASH24);   name = "siphash24"
     case default;                          name = ""
     end select
   end function
@@ -261,6 +263,56 @@ contains
     end if
     allocate (key(klen))
     call fill_csprng(key, klen, rc)
+    if (rc /= STATUS_OK) then
+      deallocate (key)
+      status = rc
+      return
+    end if
+    status = STATUS_OK
+  end subroutine
+
+  ! Deterministically derives the outer cipher key for `cipher` from a
+  ! caller-supplied `master` secret (e.g. an ML-KEM shared secret). The
+  ! result is a deterministic function of `(cipher, master)`, so both
+  ! endpoints derive the same key from a shared master. `master` must
+  ! be at least `key_size(cipher)` bytes; `key` is allocated to the
+  ! cipher's key length (16 / 32 / 16 bytes for AES / ChaCha / SipHash).
+  ! Returns STATUS_BAD_INPUT when `master` is shorter than the key size.
+  subroutine itb_wrapper_derive_key(cipher, master, key, status)
+    integer,                                     intent(in)  :: cipher
+    integer(itb_byte_kind), target, contiguous,  intent(in)  :: master(:)
+    integer(itb_byte_kind), allocatable, target, intent(out) :: key(:)
+    integer(itb_status_kind),                    intent(out) :: status
+    character(:), allocatable :: cn
+    character(kind=c_char), allocatable, target :: c_name(:)
+    integer :: klen
+    integer(itb_size_kind) :: out_len
+    integer(c_int) :: rc
+    type(c_ptr) :: master_ptr
+
+    call itb_wrapper_key_size(cipher, klen, status)
+    if (status /= STATUS_OK) return
+    if (klen <= 0) then
+      status = STATUS_INTERNAL
+      return
+    end if
+    if (size(master) < klen) then
+      status = STATUS_BAD_INPUT
+      return
+    end if
+
+    cn = itb_wrapper_cipher_name(cipher)
+    call make_c_string(cn, c_name)
+
+    allocate (key(klen))
+    master_ptr = c_null_ptr
+    if (size(master) > 0) master_ptr = c_loc(master)
+
+    out_len = 0_itb_size_kind
+    rc = itb_wrapper_derive_key_c(c_loc(c_name), master_ptr,                 &
+                                    int(size(master), itb_size_kind),         &
+                                    c_loc(key), int(klen, itb_size_kind),     &
+                                    out_len)
     if (rc /= STATUS_OK) then
       deallocate (key)
       status = rc
