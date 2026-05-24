@@ -69,11 +69,20 @@ module itb_wrapper
   implicit none
   private
 
-  ! Public cipher identifiers (matching the canonical libitb cipher
-  ! ordering: AES-128-CTR = 0, ChaCha20 = 1, SipHash-2-4 = 2).
+  ! Public cipher identifiers (matching the C binding's
+  ! itb_wrapper_cipher_t integer values: AES-128-CTR = 0,
+  ! ChaCha20 = 1, SipHash-2-4 = 2, Areion-SoEM-256 = 3,
+  ! Areion-SoEM-512 = 4, BLAKE2b-256 = 5, BLAKE2b-512 = 6,
+  ! BLAKE2s = 7, BLAKE3 = 8).
   public :: ITB_WRAPPER_CIPHER_AES_128_CTR
   public :: ITB_WRAPPER_CIPHER_CHACHA20
   public :: ITB_WRAPPER_CIPHER_SIPHASH24
+  public :: ITB_WRAPPER_CIPHER_AREION_256
+  public :: ITB_WRAPPER_CIPHER_AREION_512
+  public :: ITB_WRAPPER_CIPHER_BLAKE2B_256
+  public :: ITB_WRAPPER_CIPHER_BLAKE2B_512
+  public :: ITB_WRAPPER_CIPHER_BLAKE2S
+  public :: ITB_WRAPPER_CIPHER_BLAKE3
 
   ! Single Message + size helpers.
   public :: itb_wrapper_cipher_name
@@ -95,6 +104,12 @@ module itb_wrapper
   integer, parameter :: ITB_WRAPPER_CIPHER_AES_128_CTR = 0
   integer, parameter :: ITB_WRAPPER_CIPHER_CHACHA20    = 1
   integer, parameter :: ITB_WRAPPER_CIPHER_SIPHASH24   = 2
+  integer, parameter :: ITB_WRAPPER_CIPHER_AREION_256  = 3
+  integer, parameter :: ITB_WRAPPER_CIPHER_AREION_512  = 4
+  integer, parameter :: ITB_WRAPPER_CIPHER_BLAKE2B_256 = 5
+  integer, parameter :: ITB_WRAPPER_CIPHER_BLAKE2B_512 = 6
+  integer, parameter :: ITB_WRAPPER_CIPHER_BLAKE2S     = 7
+  integer, parameter :: ITB_WRAPPER_CIPHER_BLAKE3      = 8
 
   ! ----------------------------------------------------------------
   ! Streaming derived types
@@ -143,6 +158,12 @@ contains
     case (ITB_WRAPPER_CIPHER_AES_128_CTR); name = "aescmac"
     case (ITB_WRAPPER_CIPHER_CHACHA20);    name = "chacha20"
     case (ITB_WRAPPER_CIPHER_SIPHASH24);   name = "siphash24"
+    case (ITB_WRAPPER_CIPHER_AREION_256);  name = "areion256"
+    case (ITB_WRAPPER_CIPHER_AREION_512);  name = "areion512"
+    case (ITB_WRAPPER_CIPHER_BLAKE2B_256); name = "blake2b256"
+    case (ITB_WRAPPER_CIPHER_BLAKE2B_512); name = "blake2b512"
+    case (ITB_WRAPPER_CIPHER_BLAKE2S);     name = "blake2s"
+    case (ITB_WRAPPER_CIPHER_BLAKE3);      name = "blake3"
     case default;                          name = ""
     end select
   end function
@@ -275,9 +296,10 @@ contains
   ! caller-supplied `master` secret (e.g. an ML-KEM shared secret). The
   ! result is a deterministic function of `(cipher, master)`, so both
   ! endpoints derive the same key from a shared master. `master` must
-  ! be at least `key_size(cipher)` bytes; `key` is allocated to the
-  ! cipher's key length (16 / 32 / 16 bytes for AES / ChaCha / SipHash).
-  ! Returns STATUS_BAD_INPUT when `master` is shorter than the key size.
+  ! be at least 32 bytes (the wrapper's uniform security floor); `key`
+  ! is allocated to the cipher's key length (16 / 32 / 16 bytes for
+  ! AES / ChaCha / SipHash).
+  ! Returns STATUS_BAD_INPUT when `master` is shorter than 32 bytes.
   subroutine itb_wrapper_derive_key(cipher, master, key, status)
     integer,                                     intent(in)  :: cipher
     integer(itb_byte_kind), target, contiguous,  intent(in)  :: master(:)
@@ -294,10 +316,6 @@ contains
     if (status /= STATUS_OK) return
     if (klen <= 0) then
       status = STATUS_INTERNAL
-      return
-    end if
-    if (size(master) < klen) then
-      status = STATUS_BAD_INPUT
       return
     end if
 

@@ -192,17 +192,25 @@ program eitb
   implicit none
 
   integer, parameter :: NUM_EXAMPLES = 8
-  integer, parameter :: NUM_CIPHERS  = 3
+  integer, parameter :: NUM_CIPHERS  = 9
   integer, parameter :: STREAM_BYTES = 65536
   integer, parameter :: SINGLE_BYTES = 1024
   integer, parameter :: STREAM_CHUNK = 16384
 
   integer, parameter :: CIPHERS(NUM_CIPHERS) = &
-    [ITB_WRAPPER_CIPHER_AES_128_CTR,                     &
-     ITB_WRAPPER_CIPHER_CHACHA20,                        &
-     ITB_WRAPPER_CIPHER_SIPHASH24]
-  character(len=9), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
-    [character(len=9) :: "aescmac", "chacha20", "siphash24"]
+    [ITB_WRAPPER_CIPHER_AREION_256,                      &
+     ITB_WRAPPER_CIPHER_AREION_512,                      &
+     ITB_WRAPPER_CIPHER_SIPHASH24,                       &
+     ITB_WRAPPER_CIPHER_AES_128_CTR,                     &
+     ITB_WRAPPER_CIPHER_BLAKE2B_256,                     &
+     ITB_WRAPPER_CIPHER_BLAKE2B_512,                     &
+     ITB_WRAPPER_CIPHER_BLAKE2S,                         &
+     ITB_WRAPPER_CIPHER_BLAKE3,                          &
+     ITB_WRAPPER_CIPHER_CHACHA20]
+  character(len=10), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
+    [character(len=10) :: "areion256", "areion512", "siphash24", &
+     "aescmac", "blake2b256", "blake2b512", "blake2s", "blake3",  &
+     "chacha20"]
 
   character(len=26), parameter :: EXAMPLE_NAMES(NUM_EXAMPLES) = &
     [character(len=26) ::                                       &
@@ -284,7 +292,7 @@ program eitb
             "[PASS] ", trim(EXAMPLE_NAMES(e)),                                   &
             repeat(" ", max(1, 26 - len_trim(EXAMPLE_NAMES(e)))),                &
             "+ ", trim(CIPHER_NAMES(c)),                                         &
-            repeat(" ", max(1, 9 - len_trim(CIPHER_NAMES(c)))),                  &
+            repeat(" ", max(1, 10 - len_trim(CIPHER_NAMES(c)))),                 &
             "  pt=", pt_n, " wire=", wire_n
       else
         fail_count = fail_count + 1
@@ -292,7 +300,7 @@ program eitb
             "[FAIL] ", trim(EXAMPLE_NAMES(e)),                                   &
             repeat(" ", max(1, 26 - len_trim(EXAMPLE_NAMES(e)))),                &
             "+ ", trim(CIPHER_NAMES(c)),                                         &
-            repeat(" ", max(1, 9 - len_trim(CIPHER_NAMES(c)))),                  &
+            repeat(" ", max(1, 10 - len_trim(CIPHER_NAMES(c)))),                 &
             "  pt=", pt_n, " wire=", wire_n,                                     &
             "  err: ", trim(err_msg)
       end if

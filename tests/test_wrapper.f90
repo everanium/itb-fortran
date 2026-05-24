@@ -1,11 +1,12 @@
 ! test_wrapper.f90 -- format-deniability wrapper coverage tests.
 !
 ! Exercises every entry point in the `itb_wrapper` module across the
-! three outer ciphers (AES-128-CTR / ChaCha20 / SipHash-2-4 in CTR
-! mode):
+! nine outer ciphers (Areion-SoEM-256 / Areion-SoEM-512 / SipHash-2-4 /
+! AES-128-CTR / BLAKE2b-256 / BLAKE2b-512 / BLAKE2s / BLAKE3, each in
+! CTR mode, plus ChaCha20 in its native counter mode):
 !
 !   * `itb_wrapper_key_size` / `itb_wrapper_nonce_size` size accessors
-!     -- canonical 16/16, 32/12, 16/16 byte counts.
+!     -- canonical per-cipher key / nonce byte counts.
 !   * `itb_wrapper_generate_key` -- correct length, non-zero entropy
 !     (two consecutive draws produce different keys with overwhelming
 !     probability).
@@ -35,12 +36,21 @@ program test_wrapper
 
   character(*), parameter :: TEST_NAME = "test_wrapper"
 
-  integer, parameter :: CIPHERS(3) = &
-    [ITB_WRAPPER_CIPHER_AES_128_CTR,                          &
-     ITB_WRAPPER_CIPHER_CHACHA20,                             &
-     ITB_WRAPPER_CIPHER_SIPHASH24]
-  integer, parameter :: EXPECTED_KEY_LEN(3)   = [16, 32, 16]
-  integer, parameter :: EXPECTED_NONCE_LEN(3) = [16, 12, 16]
+  integer, parameter :: CIPHERS(9) = &
+    [ITB_WRAPPER_CIPHER_AREION_256,                           &
+     ITB_WRAPPER_CIPHER_AREION_512,                           &
+     ITB_WRAPPER_CIPHER_SIPHASH24,                            &
+     ITB_WRAPPER_CIPHER_AES_128_CTR,                          &
+     ITB_WRAPPER_CIPHER_BLAKE2B_256,                          &
+     ITB_WRAPPER_CIPHER_BLAKE2B_512,                          &
+     ITB_WRAPPER_CIPHER_BLAKE2S,                              &
+     ITB_WRAPPER_CIPHER_BLAKE3,                               &
+     ITB_WRAPPER_CIPHER_CHACHA20]
+  ! Key / nonce byte lengths paired by CIPHERS index:
+  ! areion256 / areion512 / siphash24 / aescmac / blake2b256 /
+  ! blake2b512 / blake2s / blake3 / chacha20.
+  integer, parameter :: EXPECTED_KEY_LEN(9)   = [32, 64, 16, 16, 32, 32, 32, 32, 32]
+  integer, parameter :: EXPECTED_NONCE_LEN(9) = [16, 16, 16, 16, 16, 16, 16, 16, 12]
   integer, parameter :: PLAINTEXT_SIZES(3)    = [1, 1024, 65536]
 
   call test_size_accessors()
@@ -136,6 +146,8 @@ contains
     integer(itb_byte_kind), allocatable :: plaintext(:), wire(:), recovered(:)
     integer(itb_status_kind) :: rc
     logical :: same
+    ! 32-byte master meets the wrapper's uniform security floor and keys
+    ! every cipher; the kdf layer truncates / stretches as needed.
     master = token_bytes(32)
     do i = 1, size(CIPHERS)
       call itb_wrapper_derive_key(CIPHERS(i), master, key1, rc)
