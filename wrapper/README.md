@@ -76,7 +76,9 @@ integer(itb_byte_kind), allocatable :: outer_key(:), nonce(:)
 call new_itb_encryptor(enc, "areion512", 1024, "hmac-blake3", 1)
 call enc%set_nonce_bits(128); call enc%set_barrier_fill(4)
 call enc%set_bit_soup(1);     call enc%set_lock_soup(1)
-call enc%set_lock_batch(1)    ! Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+call enc%set_lock_batch(1)    ! Recommended under the PRF assumption,
+                              ! the performance Lock Soup mode.
+                              ! Symmetric, set on both sides.
 
 call itb_wrapper_generate_key(ITB_WRAPPER_CIPHER_AES_128_CTR, outer_key, rc)
 

@@ -579,7 +579,9 @@ program demo_easy
   call enc%set_barrier_fill (4)          ! CSPRNG fill margin (default 1)
   call enc%set_bit_soup     (1)          ! optional bit-level split (bit-soup; default 0 = byte-level)
   call enc%set_lock_soup    (1)          ! optional Insane Interlocked Mode
-  call enc%set_lock_batch   (1)          ! Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
+  call enc%set_lock_batch   (1)          ! Recommended under the PRF assumption,
+                                         ! the performance Lock Soup mode.
+                                         ! Symmetric, set on both sides.
 
   blob = enc%export_state()              ! persistence: keys + components + MAC key
   ct   = enc%encrypt_auth(pt)            ! 32-byte tag embedded inside the container
