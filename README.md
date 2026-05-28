@@ -579,6 +579,7 @@ program demo_easy
   call enc%set_barrier_fill (4)          ! CSPRNG fill margin (default 1)
   call enc%set_bit_soup     (1)          ! optional bit-level split (bit-soup; default 0 = byte-level)
   call enc%set_lock_soup    (1)          ! optional Insane Interlocked Mode
+  call enc%set_lock_batch   (1)          ! Recommended under the PRF assumption — the performance Lock Soup mode; symmetric, set on both sides.
 
   blob = enc%export_state()              ! persistence: keys + components + MAC key
   ct   = enc%encrypt_auth(pt)            ! 32-byte tag embedded inside the container
@@ -939,10 +940,11 @@ encryptor restores the keying material — the receiver constructs
 the encryptor with the same `primitive` / `key_bits` /
 `mac_name` / `mode` arguments, calls `import_state`, and proceeds
 with `decrypt_auth`. Per-instance configuration knobs
-(`nonce_bits`, `barrier_fill`, `bit_soup`, `lock_soup`,
-`chunk_size`) are NOT carried in the v1 blob; the lockSeed flag
-IS carried because activating it changes the structural seed
-count. Mismatches on `primitive` / `key_bits` / `mode` /
+(`nonce_bits`, `barrier_fill`, `bit_soup`, `lock_soup`, `lock_batch`) are
+carried in the v1 blob as optional fields when the sender set them
+explicitly and restored on import; `chunk_size` is not carried
+(deployment config). The lockSeed flag IS carried because activating it
+changes the structural seed count. Mismatches on `primitive` / `key_bits` / `mode` /
 `mac_name` surface as `STATUS_EASY_MISMATCH`; the offending JSON
 field name is reachable via `itb_last_mismatch_field ()`.
 
@@ -1037,6 +1039,7 @@ calls in the process. Out-of-range values surface as
 | `itb_set_barrier_fill (n)` | 1, 2, 4, 8, 16, 32 | 1 |
 | `itb_set_bit_soup (mode)` | 0 (off), non-zero (on) | 0 |
 | `itb_set_lock_soup (mode)` | 0 (off), non-zero (on) | 0 |
+| `itb_set_lock_batch (mode)` | 0 (off), non-zero (on) | 0 |
 
 Mutating these affects every encryptor constructed AFTER the
 call; pre-existing `itb_encryptor_t` instances snapshot the
@@ -1186,6 +1189,7 @@ from the named module.
 |---|---|
 | `itb_set_bit_soup / itb_get_bit_soup` | Bit Soup mode toggle |
 | `itb_set_lock_soup / itb_get_lock_soup` | Lock Soup mode toggle |
+| `itb_set_lock_batch / itb_get_lock_batch` | Lock Batch mode toggle (performance variant of Lock Soup; recommended under the PRF assumption; symmetric; inert unless Lock Soup is engaged) |
 | `itb_set_max_workers / itb_get_max_workers` | Worker pool cap |
 | `itb_set_nonce_bits / itb_get_nonce_bits` | Nonce width (128 / 256 / 512) |
 | `itb_set_barrier_fill / itb_get_barrier_fill` | Barrier-fill factor |
@@ -1221,7 +1225,7 @@ from the named module.
 | `itb_encryptor_mixed_single (e, prim_n, prim_d, prim_s, key_bits, mac_name [, prim_l])` | Mixed Single Ouroboros |
 | `itb_encryptor_mixed_triple (e, prim_n, prim_d1..3, prim_s1..3, key_bits, mac_name [, prim_l])` | Mixed Triple Ouroboros |
 | `e%encrypt / e%decrypt / e%encrypt_auth / e%decrypt_auth` | Cipher entry points |
-| `e%set_lock_seed / set_bit_soup / set_lock_soup / set_chunk_size / set_nonce_bits / set_barrier_fill` | Per-instance setters |
+| `e%set_lock_seed / set_bit_soup / set_lock_soup / set_lock_batch / set_chunk_size / set_nonce_bits / set_barrier_fill` | Per-instance setters |
 | `e%primitive / primitive_at / mac_name / key_bits / mode / seed_count / nonce_bits / header_size / has_prf_keys / is_mixed` | Accessors |
 | `e%mac_key / prf_key / seed_components / parse_chunk_len` | Key-material + per-instance chunk-length parser |
 | `e%export_state / import_state` | State-blob persistence |

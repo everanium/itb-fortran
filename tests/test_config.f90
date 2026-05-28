@@ -28,6 +28,7 @@ program test_config
 
   call test_bit_soup_roundtrip()
   call test_lock_soup_roundtrip()
+  call test_lock_batch_roundtrip()
   call test_max_workers_roundtrip()
   call test_nonce_bits_validation()
   call test_barrier_fill_validation()
@@ -52,6 +53,14 @@ contains
     call itb_set_lock_soup(1)
     call assert_int_eq(TEST_NAME, "lock_soup set to 1", int(itb_get_lock_soup()), 1)
     call itb_set_lock_soup(int(orig))
+  end subroutine
+
+  subroutine test_lock_batch_roundtrip()
+    integer(itb_int32_kind) :: orig
+    orig = itb_get_lock_batch()
+    call itb_set_lock_batch(1)
+    call assert_int_eq(TEST_NAME, "lock_batch set to 1", int(itb_get_lock_batch()), 1)
+    call itb_set_lock_batch(int(orig))
   end subroutine
 
   subroutine test_max_workers_roundtrip()

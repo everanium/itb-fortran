@@ -1,9 +1,7 @@
 ! test_wrapper.f90 -- format-deniability wrapper coverage tests.
 !
 ! Exercises every entry point in the `itb_wrapper` module across the
-! nine outer ciphers (Areion-SoEM-256 / Areion-SoEM-512 / SipHash-2-4 /
-! AES-128-CTR / BLAKE2b-256 / BLAKE2b-512 / BLAKE2s / BLAKE3, each in
-! CTR mode, plus ChaCha20 in its native counter mode):
+! outer ciphers, each in CTR mode:
 !
 !   * `itb_wrapper_key_size` / `itb_wrapper_nonce_size` size accessors
 !     -- canonical per-cipher key / nonce byte counts.
@@ -39,17 +37,16 @@ program test_wrapper
   integer, parameter :: CIPHERS(9) = &
     [ITB_WRAPPER_CIPHER_AREION_256,                           &
      ITB_WRAPPER_CIPHER_AREION_512,                           &
-     ITB_WRAPPER_CIPHER_SIPHASH24,                            &
-     ITB_WRAPPER_CIPHER_AES_128_CTR,                          &
      ITB_WRAPPER_CIPHER_BLAKE2B_256,                          &
      ITB_WRAPPER_CIPHER_BLAKE2B_512,                          &
      ITB_WRAPPER_CIPHER_BLAKE2S,                              &
      ITB_WRAPPER_CIPHER_BLAKE3,                               &
+     ITB_WRAPPER_CIPHER_AES_128_CTR,                          &
+     ITB_WRAPPER_CIPHER_SIPHASH24,                            &
+
      ITB_WRAPPER_CIPHER_CHACHA20]
   ! Key / nonce byte lengths paired by CIPHERS index:
-  ! areion256 / areion512 / siphash24 / aescmac / blake2b256 /
-  ! blake2b512 / blake2s / blake3 / chacha20.
-  integer, parameter :: EXPECTED_KEY_LEN(9)   = [32, 64, 16, 16, 32, 32, 32, 32, 32]
+  integer, parameter :: EXPECTED_KEY_LEN(9)   = [32, 64, 32, 32, 32, 32, 16, 16, 32]
   integer, parameter :: EXPECTED_NONCE_LEN(9) = [16, 16, 16, 16, 16, 16, 16, 16, 12]
   integer, parameter :: PLAINTEXT_SIZES(3)    = [1, 1024, 65536]
 

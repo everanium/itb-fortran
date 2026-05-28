@@ -1,7 +1,7 @@
 ! bench_triple.f90 -- Easy Mode Triple Ouroboros benchmarks for the
 ! Fortran binding.
 !
-! Mirrors the cross-binding bench_triple cohort for the nine PRF-grade
+! Mirrors the cross-binding bench_triple cohort for PRF-grade
 ! primitives, locked at 1024-bit ITB key width and 16 MiB CSPRNG-filled
 ! payload. One mixed-primitive variant cycles the BLAKE family across
 ! the seven seed slots (noise + 3 data + 3 start) plus a dedicated
@@ -12,6 +12,7 @@
 !   make bench
 !   ./bench/bin/itb-bench-triple
 !
+!   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./bench/bin/itb-bench-triple
 !   ITB_NONCE_BITS=512 ITB_LOCKSEED=1 ./bench/bin/itb-bench-triple
 !
 !   ITB_BENCH_FILTER=blake3_encrypt ./bench/bin/itb-bench-triple
@@ -82,21 +83,24 @@ end module bench_triple_state
 
 
 program bench_triple
-  use, intrinsic :: iso_fortran_env, only: int64, output_unit
+  use, intrinsic :: iso_fortran_env, only: int64, real64, output_unit, error_unit
   use itb_kinds,     only: itb_byte_kind
   use itb_library,   only: itb_set_max_workers, itb_set_nonce_bits
   use itb_encryptor, only: itb_encryptor_t, new_itb_encryptor, &
                            itb_encryptor_mixed_triple
   use bench_common,  only: PAYLOAD_16MB, PRIMITIVES_CANONICAL, &
-                           PRIMITIVES_CANONICAL_LEN, env_lock_seed, &
-                           env_nonce_bits, random_bytes, run_all, &
+                           PRIMITIVES_CANONICAL_LEN, env_lock_batch, &
+                           env_lock_seed, &
+                           env_filter, env_min_seconds, &
+                           env_nonce_bits, random_bytes, &
+                           measure_one, contains_substr, &
                            bench_case_t
   use bench_triple_state, only: cases_state, alloc_state, state_destroy_all
   implicit none
 
   ! Mixed-primitive composition for Triple Ouroboros. The same four
   ! 256-bit-wide names from the Single bench's Mixed case are cycled
-  ! across the seven seed slots, with Areion-SoEM-256 on the dedicated
+  ! across the seven seed slots, with Areion on the dedicated
   ! lockSeed slot when ITB_LOCKSEED is set.
   character(*), parameter :: MIXED_NOISE  = "blake3"
   character(*), parameter :: MIXED_DATA1  = "blake2s"
@@ -111,10 +115,25 @@ program bench_triple
   character(*),   parameter :: MAC_NAME  = "hmac-blake3"
   integer(int64), parameter :: PAYLOAD_BYTES = PAYLOAD_16MB
 
-  integer, parameter :: TOTAL_CASES = 40
+  ! Lazy descriptor for one bench entry.
+  type :: bench_desc_t
+    character(len=128) :: name = " "
+    character(len=32)  :: prim = " "
+    integer            :: op   = 0
+    logical            :: is_mixed = .false.
+  end type
 
-  type(bench_case_t) :: cases(TOTAL_CASES)
-  integer            :: nonce_bits, n
+  integer, parameter :: TOTAL_DESCS = 40
+  integer, parameter :: OP_ENCRYPT       = 1
+  integer, parameter :: OP_DECRYPT       = 2
+  integer, parameter :: OP_ENCRYPT_AUTH  = 3
+  integer, parameter :: OP_DECRYPT_AUTH  = 4
+
+  type(bench_desc_t) :: descs(TOTAL_DESCS)
+  type(bench_case_t) :: c
+  integer            :: nonce_bits, ndesc, nsel, i
+  character(:), allocatable :: flt
+  real(real64) :: min_seconds
 
   nonce_bits = env_nonce_bits(128)
   call itb_set_max_workers(0)
@@ -129,8 +148,37 @@ program bench_triple
       " workers=auto"
   flush(output_unit)
 
-  call build_cases(cases, n)
-  call run_all(cases, n)
+  call build_descs(descs, ndesc)
+  flt = env_filter()
+  min_seconds = env_min_seconds()
+
+  nsel = 0
+  do i = 1, ndesc
+    if (len(flt) == 0 .or. contains_substr(trim(descs(i)%name), flt)) then
+      nsel = nsel + 1
+    end if
+  end do
+
+  if (nsel == 0) then
+    write (error_unit, "(A,A)") &
+      "no bench cases match filter ", &
+      trim(merge(flt, "<unset>", len(flt) > 0))
+    stop 0
+  end if
+
+  write (output_unit, "(A,I0,A,I0,A,F0.3)") &
+      "# benchmarks=", nsel, &
+      " payload_bytes=", PAYLOAD_BYTES, &
+      " min_seconds=", min_seconds
+  flush(output_unit)
+
+  do i = 1, ndesc
+    if (len(flt) == 0 .or. contains_substr(trim(descs(i)%name), flt)) then
+      call state_destroy_all()
+      call build_one_case(descs(i), c)
+      call measure_one(c, min_seconds)
+    end if
+  end do
   call state_destroy_all()
 
 contains
@@ -140,6 +188,13 @@ contains
     if (env_lock_seed()) call enc%set_lock_seed(1)
   end subroutine
 
+  ! Apply the Lock Batch performance mode when ITB_LOCKBATCH is set.
+  ! Inert unless Lock Soup is engaged via ITB_LOCKSEED.
+  subroutine apply_lockbatch_if_requested(enc)
+    type(itb_encryptor_t), intent(inout) :: enc
+    if (env_lock_batch()) call enc%set_lock_batch(1)
+  end subroutine
+
   ! Construct a single-primitive 1024-bit Triple Ouroboros encryptor
   ! with HMAC-BLAKE3 authentication (mode = 3, 7 seed slots).
   subroutine build_triple_enc(idx, primitive)
@@ -147,6 +202,7 @@ contains
     character(*), intent(in) :: primitive
     call new_itb_encryptor(cases_state(idx)%enc, primitive, KEY_BITS, MAC_NAME, 3)
     call apply_lockseed_if_requested(cases_state(idx)%enc)
+    call apply_lockbatch_if_requested(cases_state(idx)%enc)
   end subroutine
 
   ! Construct a mixed-primitive Triple Ouroboros encryptor across
@@ -165,6 +221,7 @@ contains
                                        MIXED_START1, MIXED_START2, MIXED_START3, &
                                        KEY_BITS, MAC_NAME)
     end if
+    call apply_lockbatch_if_requested(cases_state(idx)%enc)
   end subroutine
 
   subroutine fill_payload(idx)
@@ -319,10 +376,10 @@ contains
     c%run => run_decrypt_auth
   end subroutine
 
-  ! ----- Case-list assembly ----------------------------------------
+  ! ----- Descriptor-list assembly (no encryptors / payloads yet) ----
 
-  subroutine build_cases(cs, n_out)
-    type(bench_case_t), intent(out) :: cs(:)
+  subroutine build_descs(ds, n_out)
+    type(bench_desc_t), intent(out) :: ds(:)
     integer,            intent(out) :: n_out
     integer :: i, idx
     character(:), allocatable :: prim_name, base_name
@@ -332,24 +389,47 @@ contains
       prim_name = trim(PRIMITIVES_CANONICAL(i))
       base_name = "bench_triple_" // prim_name // "_1024bit"
       idx = idx + 1
-      call make_encrypt_case(base_name // "_encrypt_16mb",     prim_name, .false., cs(idx))
+      ds(idx)%name = trim(base_name // "_encrypt_16mb")
+      ds(idx)%prim = prim_name;  ds(idx)%op = OP_ENCRYPT;      ds(idx)%is_mixed = .false.
       idx = idx + 1
-      call make_decrypt_case(base_name // "_decrypt_16mb",     prim_name, .false., cs(idx))
+      ds(idx)%name = trim(base_name // "_decrypt_16mb")
+      ds(idx)%prim = prim_name;  ds(idx)%op = OP_DECRYPT;      ds(idx)%is_mixed = .false.
       idx = idx + 1
-      call make_encrypt_auth_case(base_name // "_encrypt_auth_16mb", prim_name, .false., cs(idx))
+      ds(idx)%name = trim(base_name // "_encrypt_auth_16mb")
+      ds(idx)%prim = prim_name;  ds(idx)%op = OP_ENCRYPT_AUTH; ds(idx)%is_mixed = .false.
       idx = idx + 1
-      call make_decrypt_auth_case(base_name // "_decrypt_auth_16mb", prim_name, .false., cs(idx))
+      ds(idx)%name = trim(base_name // "_decrypt_auth_16mb")
+      ds(idx)%prim = prim_name;  ds(idx)%op = OP_DECRYPT_AUTH; ds(idx)%is_mixed = .false.
     end do
     base_name = "bench_triple_mixed_1024bit"
     idx = idx + 1
-    call make_encrypt_case(base_name // "_encrypt_16mb",     "", .true., cs(idx))
+    ds(idx)%name = trim(base_name // "_encrypt_16mb")
+    ds(idx)%prim = "";  ds(idx)%op = OP_ENCRYPT;      ds(idx)%is_mixed = .true.
     idx = idx + 1
-    call make_decrypt_case(base_name // "_decrypt_16mb",     "", .true., cs(idx))
+    ds(idx)%name = trim(base_name // "_decrypt_16mb")
+    ds(idx)%prim = "";  ds(idx)%op = OP_DECRYPT;      ds(idx)%is_mixed = .true.
     idx = idx + 1
-    call make_encrypt_auth_case(base_name // "_encrypt_auth_16mb", "", .true., cs(idx))
+    ds(idx)%name = trim(base_name // "_encrypt_auth_16mb")
+    ds(idx)%prim = "";  ds(idx)%op = OP_ENCRYPT_AUTH; ds(idx)%is_mixed = .true.
     idx = idx + 1
-    call make_decrypt_auth_case(base_name // "_decrypt_auth_16mb", "", .true., cs(idx))
+    ds(idx)%name = trim(base_name // "_decrypt_auth_16mb")
+    ds(idx)%prim = "";  ds(idx)%op = OP_DECRYPT_AUTH; ds(idx)%is_mixed = .true.
     n_out = idx
+  end subroutine
+
+  subroutine build_one_case(d, c)
+    type(bench_desc_t), intent(in)  :: d
+    type(bench_case_t), intent(out) :: c
+    select case (d%op)
+    case (OP_ENCRYPT)
+      call make_encrypt_case(trim(d%name), trim(d%prim), d%is_mixed, c)
+    case (OP_DECRYPT)
+      call make_decrypt_case(trim(d%name), trim(d%prim), d%is_mixed, c)
+    case (OP_ENCRYPT_AUTH)
+      call make_encrypt_auth_case(trim(d%name), trim(d%prim), d%is_mixed, c)
+    case (OP_DECRYPT_AUTH)
+      call make_decrypt_auth_case(trim(d%name), trim(d%prim), d%is_mixed, c)
+    end select
   end subroutine
 
 end program bench_triple

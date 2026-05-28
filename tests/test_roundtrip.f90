@@ -223,9 +223,9 @@ contains
   subroutine test_list_hashes()
     integer(itb_int32_kind) :: count
     character(*), parameter :: EXPECTED(9) = &
-        [character(len=10) :: "areion256", "areion512", "siphash24",   &
-                              "aescmac",   "blake2b256", "blake2b512", &
-                              "blake2s",   "blake3",     "chacha20"]
+        [character(len=10) :: "areion256", "areion512", "blake2b256",  &
+                              "blake2b512", "blake2s",  "blake3",     &
+                              "aescmac",   "siphash24", "chacha20"]
     character(:), allocatable :: name
     integer :: i
 

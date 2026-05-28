@@ -1,9 +1,8 @@
 ! eitb.f90 -- Fortran-side eitb matrix runner.
 !
 ! Mirrors `tools/eitb/main.go` for the Fortran binding. Eight examples
-! crossed with three outer ciphers (aes / chacha / siphash) yields a
-! 24-cell PASS/FAIL matrix. Every cell encrypts a CSPRNG plaintext
-! (1024 bytes for single-message; 65536 bytes for streaming),
+! crossed with outer ciphers yields a matrix. Every cell encrypts a CSPRNG
+! plaintext (1024 bytes for single-message; 65536 bytes for streaming),
 ! seals the resulting ITB ciphertext under the chosen outer cipher,
 ! decrypts back through the wrap layer + the inner ITB layer, and
 ! verifies sha256 byte-equality of the recovered plaintext against
@@ -23,7 +22,7 @@
 !   8. message-lowlevel-auth      Low-Level Single Message (MAC Authenticated)
 !
 ! Default behaviour applies `itb_wrap_in_place` / `itb_unwrap_in_place`
-! on the message-* examples (zero-allocation steady state); the
+! on the message-* examples (no output-buffer allocation); the
 ! immutable-input alternatives `itb_wrap` / `itb_unwrap` are kept as
 ! commented-out blocks alongside each call site so the tradeoff stays
 ! visible at the source.
@@ -200,16 +199,16 @@ program eitb
   integer, parameter :: CIPHERS(NUM_CIPHERS) = &
     [ITB_WRAPPER_CIPHER_AREION_256,                      &
      ITB_WRAPPER_CIPHER_AREION_512,                      &
-     ITB_WRAPPER_CIPHER_SIPHASH24,                       &
-     ITB_WRAPPER_CIPHER_AES_128_CTR,                     &
      ITB_WRAPPER_CIPHER_BLAKE2B_256,                     &
      ITB_WRAPPER_CIPHER_BLAKE2B_512,                     &
      ITB_WRAPPER_CIPHER_BLAKE2S,                         &
      ITB_WRAPPER_CIPHER_BLAKE3,                          &
+     ITB_WRAPPER_CIPHER_AES_128_CTR,                     &
+     ITB_WRAPPER_CIPHER_SIPHASH24,                       &
      ITB_WRAPPER_CIPHER_CHACHA20]
   character(len=10), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
-    [character(len=10) :: "areion256", "areion512", "siphash24", &
-     "aescmac", "blake2b256", "blake2b512", "blake2s", "blake3",  &
+    [character(len=10) :: "areion256", "areion512", "blake2b256", &
+     "blake2b512", "blake2s", "blake3", "aescmac", "siphash24",   &
      "chacha20"]
 
   character(len=26), parameter :: EXAMPLE_NAMES(NUM_EXAMPLES) = &
@@ -358,6 +357,7 @@ contains
     call enc%set_barrier_fill(4)
     call enc%set_bit_soup(1)
     call enc%set_lock_soup(1)
+    call enc%set_lock_batch(1)
   end subroutine
 
   ! ----------------------------------------------------------------
@@ -555,6 +555,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 1024)
     call new_itb_seed(data_seed,  "areion512", 1024)
@@ -870,6 +871,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 1024)
     call new_itb_seed(data_seed,  "areion512", 1024)
@@ -1000,7 +1002,7 @@ contains
 
   ! ----------------------------------------------------------------
   ! 5. message-easy-nomac -- Easy Single Message, No MAC.
-  ! Default: itb_wrap_in_place + itb_unwrap_in_place (zero allocation).
+  ! Default: itb_wrap_in_place + itb_unwrap_in_place (no output-buffer allocation).
   ! Immutable alternative: itb_wrap + itb_unwrap (commented).
   ! ----------------------------------------------------------------
   subroutine run_message_easy_nomac(cipher, plaintext, recovered, wire_n, ok, err_msg)
@@ -1179,6 +1181,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 2048)
     call new_itb_seed(data_seed,  "areion512", 2048)
@@ -1253,6 +1256,7 @@ contains
     call itb_set_barrier_fill(4)
     call itb_set_bit_soup(1)
     call itb_set_lock_soup(1)
+    call itb_set_lock_batch(1)
 
     call new_itb_seed(noise,      "areion512", 2048)
     call new_itb_seed(data_seed,  "areion512", 2048)

@@ -41,12 +41,12 @@ contains
     select case (trim(name))
     case ("areion256");  n = 32
     case ("areion512");  n = 64
-    case ("siphash24");  n = 0
-    case ("aescmac");    n = 16
     case ("blake2b256"); n = 32
     case ("blake2b512"); n = 64
     case ("blake2s");    n = 32
     case ("blake3");     n = 32
+    case ("aescmac");    n = 16
+    case ("siphash24");  n = 0
     case ("chacha20");   n = 32
     case default;        n = -1
     end select
@@ -65,11 +65,11 @@ contains
 
   subroutine test_roundtrip_all_hashes()
     character(len=10), parameter :: HASHES(9) = &
-        [character(len=10) :: "areion256", "areion512", "siphash24",   &
-                              "aescmac",   "blake2b256", "blake2b512", &
-                              "blake2s",   "blake3",     "chacha20"]
+        [character(len=10) :: "areion256", "areion512", "blake2b256",  &
+                              "blake2b512", "blake2s",  "blake3",      &
+                              "aescmac",   "siphash24", "chacha20"]
     integer, parameter :: WIDTHS(9) = &
-        [256, 512, 128, 128, 256, 512, 256, 256, 256]
+        [256, 512, 256, 512, 256, 256, 128, 128, 256]
     integer, parameter :: CANDIDATE_KB(3) = [512, 1024, 2048]
     character(*), parameter :: PREFIX = "any binary data, including 0x00 bytes -- "
     integer(itb_byte_kind), target,     allocatable :: plaintext(:)
@@ -138,9 +138,9 @@ contains
 
   subroutine test_random_key_path()
     character(len=10), parameter :: HASHES(9) = &
-        [character(len=10) :: "areion256", "areion512", "siphash24",   &
-                              "aescmac",   "blake2b256", "blake2b512", &
-                              "blake2s",   "blake3",     "chacha20"]
+        [character(len=10) :: "areion256", "areion512", "blake2b256",  &
+                              "blake2b512", "blake2s",  "blake3",      &
+                              "aescmac",   "siphash24", "chacha20"]
     integer(itb_u64_kind), allocatable :: components(:)
     integer(itb_byte_kind), allocatable :: empty_key(:)
     integer(itb_byte_kind), allocatable :: derived_key(:)

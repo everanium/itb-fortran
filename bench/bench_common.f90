@@ -14,6 +14,11 @@
 !   ITB_NONCE_BITS    process-wide nonce width override; valid values
 !                     128 / 256 / 512. Maps to itb_set_nonce_bits
 !                     before any encryptor is constructed. Default 128.
+!   ITB_LOCKBATCH     non-empty / non-`0` enables Lock Batch (the
+!                     performance Lock Soup mode); set with ITB_LOCKSEED.
+!                     Every Easy Mode encryptor additionally calls
+!                     `e%set_lock_batch(1)`. Inert unless Lock Soup is
+!                     engaged via ITB_LOCKSEED. Default off.
 !   ITB_LOCKSEED      when set to a non-empty / non-`0` value, every
 !                     Easy Mode encryptor in this run calls
 !                     `e%set_lock_seed(1)`. Easy Mode auto-couples
@@ -47,6 +52,7 @@ module bench_common
   public :: PRIMITIVES_CANONICAL_LEN
 
   public :: env_nonce_bits
+  public :: env_lock_batch
   public :: env_lock_seed
   public :: env_filter
   public :: env_min_seconds
@@ -56,6 +62,8 @@ module bench_common
   public :: bench_case_t
   public :: bench_run_iface
   public :: run_all
+  public :: measure_one
+  public :: contains_substr
 
   ! Default 16 MiB CSPRNG-filled payload, matching the Go bench /
   ! Python bench / Rust bench / D bench / C bench surfaces.
@@ -126,6 +134,23 @@ contains
         " invalid (expected 128/256/512); using ", default_value
       v = default_value
     end select
+  end function
+
+  function env_lock_batch() result(b)
+    logical :: b
+    character(len=64) :: buf
+    integer :: rc, blen
+
+    call get_environment_variable("ITB_LOCKBATCH", buf, length=blen, status=rc)
+    if (rc /= 0 .or. blen == 0) then
+      b = .false.
+      return
+    end if
+    if (trim(buf) == "0") then
+      b = .false.
+    else
+      b = .true.
+    end if
   end function
 
   function env_lock_seed() result(b)
@@ -391,6 +416,17 @@ contains
         call measure_case(cases(i), min_seconds)
       end if
     end do
+  end subroutine
+
+  ! Measure a single pre-built case at the given min_seconds threshold
+  ! and emit one Go-bench-style report line.  Used by the lazy bench
+  ! runner in bench_wrapper.f90 — the caller handles filtering and the
+  ! header line; this subroutine handles only measurement + output for
+  ! one case.
+  subroutine measure_one(c, min_seconds)
+    type(bench_case_t), intent(in) :: c
+    real(real64),       intent(in) :: min_seconds
+    call measure_case(c, min_seconds)
   end subroutine
 
 end module bench_common

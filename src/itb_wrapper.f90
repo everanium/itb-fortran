@@ -18,7 +18,7 @@
 !      treated as one opaque blob. Wire = nonce || keystream-XOR(blob).
 !      Allocates a fresh `wire` / `blob` on the caller's behalf via
 !      the Fortran `allocatable, intent(out)` convention.
-!   2. `itb_wrap_in_place` / `itb_unwrap_in_place` -- zero-allocation.
+!   2. `itb_wrap_in_place` / `itb_unwrap_in_place` -- no output-buffer allocation.
 !      Mutates the caller's blob / wire buffer; emits the per-stream
 !      nonce into a separate caller-supplied buffer (wrap) or returns
 !      the body-first index into the wire (unwrap).

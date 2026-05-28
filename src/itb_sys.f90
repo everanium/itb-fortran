@@ -136,6 +136,17 @@ module itb_sys
       integer(c_int)             :: mode
     end function
 
+    function itb_set_lock_batch_c(mode) bind(C, name="ITB_SetLockBatch") result(rc)
+      import
+      integer(c_int), value      :: mode
+      integer(c_int)             :: rc
+    end function
+
+    function itb_get_lock_batch_c() bind(C, name="ITB_GetLockBatch") result(mode)
+      import
+      integer(c_int)             :: mode
+    end function
+
     function itb_set_max_workers_c(n) bind(C, name="ITB_SetMaxWorkers") result(rc)
       import
       integer(c_int), value      :: n
@@ -506,6 +517,14 @@ module itb_sys
 
     function itb_easy_set_lock_soup_c(handle, mode) &
         bind(C, name="ITB_Easy_SetLockSoup") result(rc)
+      import
+      integer(c_intptr_t), value     :: handle
+      integer(c_int), value          :: mode
+      integer(c_int)                 :: rc
+    end function
+
+    function itb_easy_set_lock_batch_c(handle, mode) &
+        bind(C, name="ITB_Easy_SetLockBatch") result(rc)
       import
       integer(c_intptr_t), value     :: handle
       integer(c_int), value          :: mode
@@ -1104,10 +1123,9 @@ module itb_sys
     ! These twelve declarations bind to the libitb wrapper exports
     ! defined in `cmd/cshared/main.go` under the
     ! "Format-deniability wrapper" section. Every entry point
-    ! dispatches off a `cipher_name` NUL-terminated string
-    ! ("aescmac" / "chacha20" / "siphash24"). The Fortran-side wrapper
-    ! module `itb_wrapper` layers a derived-type / subroutine
-    ! surface on top.
+    ! dispatches off a `cipher_name` NUL-terminated string.
+    ! The Fortran-side wrapper module `itb_wrapper` layers
+    ! a derived-type / subroutine surface on top.
     ! --------------------------------------------------------------
 
     function itb_wrapper_key_size_c(cipherName, outSize) &

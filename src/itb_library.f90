@@ -48,6 +48,7 @@ module itb_library
 
   public :: itb_set_bit_soup, itb_get_bit_soup
   public :: itb_set_lock_soup, itb_get_lock_soup
+  public :: itb_set_lock_batch, itb_get_lock_batch
   public :: itb_set_max_workers, itb_get_max_workers
   public :: itb_set_nonce_bits, itb_get_nonce_bits
   public :: itb_set_barrier_fill, itb_get_barrier_fill
@@ -239,6 +240,21 @@ contains
   function itb_get_lock_soup() result(mode)
     integer(itb_int32_kind) :: mode
     mode = itb_get_lock_soup_c()
+  end function
+
+  ! Per-chunk PRF batching for the Lock Soup overlay (0 = off,
+  ! non-zero = on); inert unless Lock Soup is engaged. Same lifecycle
+  ! rules as itb_set_lock_soup.
+  subroutine itb_set_lock_batch(mode)
+    integer, intent(in) :: mode
+    integer(itb_status_kind) :: rc
+    rc = itb_set_lock_batch_c(int(mode, c_int))
+    if (rc /= STATUS_OK) call raise_itb_error(rc)
+  end subroutine
+
+  function itb_get_lock_batch() result(mode)
+    integer(itb_int32_kind) :: mode
+    mode = itb_get_lock_batch_c()
   end function
 
   subroutine itb_set_max_workers(n)

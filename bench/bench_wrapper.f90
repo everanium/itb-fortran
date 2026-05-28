@@ -1,18 +1,19 @@
 ! bench_wrapper.f90 -- format-deniability wrapper benchmarks for the
 ! Fortran binding.
 !
-! Mirrors the cross-binding wrapper bench shape:
+! Mirrors the cross-binding wrapper bench shape. The outer-cipher
+! palette covers every cipher in PRIMITIVES_CANONICAL order
+! (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+! aescmac, siphash24, chacha20):
 !
-!   * 6 wrapper only round-trip cases   (3 ciphers x { Wrap, WrapInPlace })
-!   * 24 Message Single                  (4 modes x 3 ciphers x 2 dirs)
-!   * 24 Message Triple                  (4 modes x 3 ciphers x 2 dirs)
-!   * 24 Streaming Single                (4 modes x 3 ciphers x 2 dirs)
-!   * 24 Streaming Triple                (4 modes x 3 ciphers x 2 dirs)
+!   * wrapper only round-trip cases   ({ Wrap, WrapInPlace } per cipher)
+!   * Message Single                  (4 modes x 2 dirs per cipher)
+!   * Message Triple                  (4 modes x 2 dirs per cipher)
+!   * Streaming Single                (4 modes x 2 dirs per cipher)
+!   * Streaming Triple                (4 modes x 2 dirs per cipher)
 !
-!   Total: 102 sub-benches.
-!
-! Streaming sub-bench inventory per direction = 4 modes x 3 ciphers
-! = 12 (no `noaead-*-io` mode -- the Fortran binding has no
+! Streaming sub-bench inventory per direction = 4 modes per cipher
+! (no `noaead-*-io` mode -- the Fortran binding has no
 ! unit-IO analogue for Non-AEAD streaming). Modes:
 !
 !   1. Streaming AEAD Easy IO-Driven       (MAC Authenticated)
@@ -122,7 +123,7 @@ module bench_wrapper_state
     integer(itb_byte_kind), allocatable  :: work_buf(:)
   end type
 
-  integer, parameter :: MAX_CASES = 128
+  integer, parameter :: MAX_CASES = 320
   type(case_state_t), save :: cases_state(MAX_CASES)
   integer,            save :: cases_state_len = 0
 
@@ -163,7 +164,7 @@ end module bench_wrapper_state
 
 
 program bench_wrapper
-  use, intrinsic :: iso_fortran_env, only: int64, output_unit
+  use, intrinsic :: iso_fortran_env, only: int64, real64, output_unit
   use, intrinsic :: iso_c_binding
   use itb_kinds,    only: itb_byte_kind, itb_status_kind
   use itb_library,  only: itb_set_max_workers, itb_set_nonce_bits
@@ -177,18 +178,30 @@ program bench_wrapper
   use itb_wrapper
   use itb_errors,   only: STATUS_OK
   use bench_common, only: PAYLOAD_16MB, env_lock_seed, env_nonce_bits,        &
-                          random_bytes, run_all, bench_case_t
+                          env_filter, env_min_seconds,                         &
+                          random_bytes, measure_one, bench_case_t,   &
+                          contains_substr
   use bench_wrapper_state
   implicit none
 
   ! Cipher constants in canonical order.
-  integer, parameter :: NUM_CIPHERS = 3
+  ! Full outer-keystream palette in PRIMITIVES_CANONICAL order
+  ! (areion256, areion512, blake2b256, blake2b512, blake2s, blake3,
+  ! aescmac, siphash24, chacha20).
+  integer, parameter :: NUM_CIPHERS = 9
   integer, parameter :: CIPHERS(NUM_CIPHERS) = [                              &
+      ITB_WRAPPER_CIPHER_AREION_256,                                           &
+      ITB_WRAPPER_CIPHER_AREION_512,                                           &
+      ITB_WRAPPER_CIPHER_BLAKE2B_256,                                          &
+      ITB_WRAPPER_CIPHER_BLAKE2B_512,                                          &
+      ITB_WRAPPER_CIPHER_BLAKE2S,                                              &
+      ITB_WRAPPER_CIPHER_BLAKE3,                                               &
       ITB_WRAPPER_CIPHER_AES_128_CTR,                                          &
-      ITB_WRAPPER_CIPHER_CHACHA20,                                             &
-      ITB_WRAPPER_CIPHER_SIPHASH24]
-  character(len=9), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
-      [character(len=9) :: "aescmac", "chacha20", "siphash24"]
+      ITB_WRAPPER_CIPHER_SIPHASH24,                                            &
+      ITB_WRAPPER_CIPHER_CHACHA20]
+  character(len=10), parameter :: CIPHER_NAMES(NUM_CIPHERS) = &
+      [character(len=10) :: "areion256", "areion512", "blake2b256",           &
+       "blake2b512", "blake2s", "blake3", "aescmac", "siphash24", "chacha20"]
 
   ! Per-mode label tables -- indexed by mode 1..4 in the canonical
   ! Easy-NoMAC / Easy-Auth / LowLevel-NoMAC / LowLevel-Auth order
@@ -213,13 +226,19 @@ program bench_wrapper
   character(*),         parameter :: PIPELINE_MAC_NAME  = "hmac-blake3"
 
   integer(int64), parameter :: WRAPPER_PAYLOAD_BYTES = PAYLOAD_16MB
-  ! Total cases:
-  !   6 wrapper only + 24 msg-single + 24 msg-triple +
-  !   24 stream-single + 24 stream-triple = 102.
-  integer, parameter :: TOTAL_CASES = 102
+  ! Total cases: 34 per cipher (2 wrapper only + 8 msg-single +
+  !   8 msg-triple + 8 stream-single + 8 stream-triple) across every cipher.
+  integer, parameter :: TOTAL_CASES = 34 * NUM_CIPHERS
 
-  type(bench_case_t) :: cases(TOTAL_CASES)
-  integer            :: nonce_bits, n
+  integer               :: nonce_bits
+  integer               :: ci, mode, dir
+  real(real64)          :: min_secs
+  character(:), allocatable :: flt
+  type(bench_case_t)    :: one_case(1)
+  character(len=256)    :: case_name
+  logical               :: filter_active
+  integer               :: n_selected, total_cases_count
+  integer               :: g_mode, g_ci, g_dir
 
   nonce_bits = env_nonce_bits(128)
   call itb_set_max_workers(0)
@@ -231,9 +250,136 @@ program bench_wrapper
       " lockseed=", merge("on ", "off", env_lock_seed())
   flush(output_unit)
 
-  call build_cases(cases, n)
-  call run_all(cases, n)
-  call state_destroy_all()
+  ! Read filter + min_seconds upfront so we can print the header.
+  flt = env_filter()
+  filter_active = (len(flt) > 0)
+  min_secs = env_min_seconds()
+
+  ! Count selected cases for the header line by iterating all case
+  ! names and checking the filter -- no heavy allocation needed.
+  n_selected = 0
+  total_cases_count = TOTAL_CASES
+
+  ! Wrapper Only: 2 per cipher.
+  do g_ci = 1, NUM_CIPHERS
+    case_name = "bench_wrapper_only_" // trim(CIPHER_NAMES(g_ci)) // "_wrap"
+    if (.not. filter_active .or. contains_substr(trim(case_name), flt)) &
+      n_selected = n_selected + 1
+    case_name = "bench_wrapper_only_" // trim(CIPHER_NAMES(g_ci)) // "_inplace"
+    if (.not. filter_active .or. contains_substr(trim(case_name), flt)) &
+      n_selected = n_selected + 1
+  end do
+  ! Message Single, Triple; Streaming Single, Triple: 4 x 9 x 2 each.
+  do g_mode = 1, 4
+    do g_ci = 1, NUM_CIPHERS
+      do g_dir = 1, 2
+        case_name = "bench_message_single_" // trim(MSG_MODE_NAMES(g_mode)) &
+            // "_" // trim(CIPHER_NAMES(g_ci)) // dir_suffix(g_dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) &
+          n_selected = n_selected + 1
+        case_name = "bench_message_triple_" // trim(MSG_MODE_NAMES(g_mode)) &
+            // "_" // trim(CIPHER_NAMES(g_ci)) // dir_suffix(g_dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) &
+          n_selected = n_selected + 1
+        case_name = "bench_streaming_single_" // trim(STREAM_MODE_NAMES(g_mode)) &
+            // "_" // trim(CIPHER_NAMES(g_ci)) // dir_suffix(g_dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) &
+          n_selected = n_selected + 1
+        case_name = "bench_streaming_triple_" // trim(STREAM_MODE_NAMES(g_mode)) &
+            // "_" // trim(CIPHER_NAMES(g_ci)) // dir_suffix(g_dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) &
+          n_selected = n_selected + 1
+      end do
+    end do
+  end do
+
+  write (output_unit, "(A,I0,A,I0,A,F0.3)") &
+      "# benchmarks=", n_selected,                                             &
+      " payload_bytes=", WRAPPER_PAYLOAD_BYTES,                                &
+      " min_seconds=", min_secs
+  flush(output_unit)
+
+  ! Lazy loop: for each (cipher, kind, mode, dir) tuple, register one
+  ! case, measure it, destroy state, then proceed to the next.
+  ! Wrapper Only — 2 per cipher.
+  do ci = 1, NUM_CIPHERS
+    case_name = "bench_wrapper_only_" // trim(CIPHER_NAMES(ci)) // "_wrap"
+    if (.not. filter_active .or. contains_substr(trim(case_name), flt)) then
+      call register_wrapper_only(one_case(1), trim(case_name), CIPHERS(ci), .false.)
+      call measure_one(one_case(1), min_secs)
+      call state_destroy_all()
+    end if
+    case_name = "bench_wrapper_only_" // trim(CIPHER_NAMES(ci)) // "_inplace"
+    if (.not. filter_active .or. contains_substr(trim(case_name), flt)) then
+      call register_wrapper_only(one_case(1), trim(case_name), CIPHERS(ci), .true.)
+      call measure_one(one_case(1), min_secs)
+      call state_destroy_all()
+    end if
+  end do
+
+  ! Message Single: modes 1-4, each cipher, each dir.
+  do mode = 1, 4
+    do ci = 1, NUM_CIPHERS
+      do dir = 1, 2
+        case_name = "bench_message_single_" // trim(MSG_MODE_NAMES(mode)) &
+            // "_" // trim(CIPHER_NAMES(ci)) // dir_suffix(dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) then
+          call register_pipeline(one_case(1), trim(case_name), CIPHERS(ci), &
+                                  msg_mode_to_modeid(mode, .false.), dir)
+          call measure_one(one_case(1), min_secs)
+          call state_destroy_all()
+        end if
+      end do
+    end do
+  end do
+
+  ! Message Triple: modes 1-4, each cipher, each dir.
+  do mode = 1, 4
+    do ci = 1, NUM_CIPHERS
+      do dir = 1, 2
+        case_name = "bench_message_triple_" // trim(MSG_MODE_NAMES(mode)) &
+            // "_" // trim(CIPHER_NAMES(ci)) // dir_suffix(dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) then
+          call register_pipeline(one_case(1), trim(case_name), CIPHERS(ci), &
+                                  msg_mode_to_modeid(mode, .true.), dir)
+          call measure_one(one_case(1), min_secs)
+          call state_destroy_all()
+        end if
+      end do
+    end do
+  end do
+
+  ! Streaming Single: modes 1-4, each cipher, each dir.
+  do mode = 1, 4
+    do ci = 1, NUM_CIPHERS
+      do dir = 1, 2
+        case_name = "bench_streaming_single_" // trim(STREAM_MODE_NAMES(mode)) &
+            // "_" // trim(CIPHER_NAMES(ci)) // dir_suffix(dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) then
+          call register_pipeline(one_case(1), trim(case_name), CIPHERS(ci), &
+                                  stream_mode_to_modeid(mode, .false.), dir)
+          call measure_one(one_case(1), min_secs)
+          call state_destroy_all()
+        end if
+      end do
+    end do
+  end do
+
+  ! Streaming Triple: modes 1-4, each cipher, each dir.
+  do mode = 1, 4
+    do ci = 1, NUM_CIPHERS
+      do dir = 1, 2
+        case_name = "bench_streaming_triple_" // trim(STREAM_MODE_NAMES(mode)) &
+            // "_" // trim(CIPHER_NAMES(ci)) // dir_suffix(dir)
+        if (.not. filter_active .or. contains_substr(trim(case_name), flt)) then
+          call register_pipeline(one_case(1), trim(case_name), CIPHERS(ci), &
+                                  stream_mode_to_modeid(mode, .true.), dir)
+          call measure_one(one_case(1), min_secs)
+          call state_destroy_all()
+        end if
+      end do
+    end do
+  end do
 
 contains
 
@@ -634,97 +780,6 @@ contains
     cases_state(idx)%pristine_wire(nonce_size + 1:wire_total) = ct(1:size(ct))
     deallocate (ct)
     deallocate (nonce)
-  end subroutine
-
-  ! ----------------------------------------------------------------
-  ! Build the 102-case list.
-  ! ----------------------------------------------------------------
-
-  subroutine build_cases(cs, n_out)
-    type(bench_case_t), intent(out) :: cs(:)
-    integer,            intent(out) :: n_out
-    integer :: idx, c, mode, dir, ci
-
-    idx = 0
-
-    ! Wrapper Only round-trip: 3 ciphers x { Wrap, WrapInPlace } = 6.
-    do c = 1, NUM_CIPHERS
-      idx = idx + 1
-      call register_wrapper_only(cs(idx),                                      &
-            "bench_wrapper_only_" // trim(CIPHER_NAMES(c)) // "_wrap",         &
-            CIPHERS(c), .false.)
-      idx = idx + 1
-      call register_wrapper_only(cs(idx),                                      &
-            "bench_wrapper_only_" // trim(CIPHER_NAMES(c)) // "_inplace",      &
-            CIPHERS(c), .true.)
-    end do
-
-    ! Message Single: 4 modes x 3 ciphers x 2 dirs = 24.
-    do mode = 1, 4
-      do ci = 1, NUM_CIPHERS
-        do dir = 1, 2
-          idx = idx + 1
-          call register_pipeline(cs(idx),                                      &
-              "bench_message_single_" // trim(MSG_MODE_NAMES(mode))            &
-                  // "_" // trim(CIPHER_NAMES(ci))                             &
-                  // dir_suffix(dir),                                          &
-              CIPHERS(ci), msg_mode_to_modeid(mode, .false.), dir)
-        end do
-      end do
-    end do
-
-    ! Message Triple: 4 x 3 x 2 = 24.
-    do mode = 1, 4
-      do ci = 1, NUM_CIPHERS
-        do dir = 1, 2
-          idx = idx + 1
-          call register_pipeline(cs(idx),                                      &
-              "bench_message_triple_" // trim(MSG_MODE_NAMES(mode))            &
-                  // "_" // trim(CIPHER_NAMES(ci))                             &
-                  // dir_suffix(dir),                                          &
-              CIPHERS(ci), msg_mode_to_modeid(mode, .true.), dir)
-        end do
-      end do
-    end do
-
-    ! Streaming Single: 4 x 3 x 2 = 24. The wrapper bench harness
-    ! exercises streaming cases at the same 16 MiB payload as the
-    ! message cases (one chunk fits below the 16 MiB chunk-size
-    ! boundary). The mode mapping below routes Streaming AEAD modes
-    ! to their MAC-Authenticated message counterparts and Streaming
-    ! No MAC modes to their No MAC message counterparts so the
-    ! per-iter cost reflects the matching ITB encrypt-rate cost; the
-    ! streaming-specific framing cost is sub-1% on this payload size
-    ! and is left out of the wrapper bench (the streaming-specific
-    ! benchmarks live in bench_single_stream / bench_triple_stream).
-    do mode = 1, 4
-      do ci = 1, NUM_CIPHERS
-        do dir = 1, 2
-          idx = idx + 1
-          call register_pipeline(cs(idx),                                      &
-              "bench_streaming_single_" // trim(STREAM_MODE_NAMES(mode))       &
-                  // "_" // trim(CIPHER_NAMES(ci))                             &
-                  // dir_suffix(dir),                                          &
-              CIPHERS(ci), stream_mode_to_modeid(mode, .false.), dir)
-        end do
-      end do
-    end do
-
-    ! Streaming Triple: 4 x 3 x 2 = 24.
-    do mode = 1, 4
-      do ci = 1, NUM_CIPHERS
-        do dir = 1, 2
-          idx = idx + 1
-          call register_pipeline(cs(idx),                                      &
-              "bench_streaming_triple_" // trim(STREAM_MODE_NAMES(mode))       &
-                  // "_" // trim(CIPHER_NAMES(ci))                             &
-                  // dir_suffix(dir),                                          &
-              CIPHERS(ci), stream_mode_to_modeid(mode, .true.), dir)
-        end do
-      end do
-    end do
-
-    n_out = idx
   end subroutine
 
   pure function dir_suffix(dir) result(s)

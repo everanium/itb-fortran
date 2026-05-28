@@ -120,6 +120,7 @@ module itb_encryptor
     procedure :: set_lock_seed     => itb_enc_set_lock_seed
     procedure :: set_bit_soup      => itb_enc_set_bit_soup
     procedure :: set_lock_soup     => itb_enc_set_lock_soup
+    procedure :: set_lock_batch    => itb_enc_set_lock_batch
     procedure :: set_chunk_size    => itb_enc_set_chunk_size
     procedure :: set_nonce_bits    => itb_enc_set_nonce_bits
     procedure :: set_barrier_fill  => itb_enc_set_barrier_fill
@@ -617,6 +618,17 @@ contains
     integer(itb_status_kind) :: rc
     if (is_closed_state(self)) call raise_itb_error(STATUS_EASY_CLOSED)
     rc = itb_easy_set_lock_soup_c(self%handle, int(mode, c_int))
+    if (rc /= STATUS_OK) call raise_itb_error(rc)
+  end subroutine
+
+  ! Per-chunk PRF batching for the Lock Soup overlay (0 = off,
+  ! non-zero = on); inert unless Lock Soup is engaged.
+  subroutine itb_enc_set_lock_batch(self, mode)
+    class(itb_encryptor_t), intent(inout) :: self
+    integer,                intent(in)    :: mode
+    integer(itb_status_kind) :: rc
+    if (is_closed_state(self)) call raise_itb_error(STATUS_EASY_CLOSED)
+    rc = itb_easy_set_lock_batch_c(self%handle, int(mode, c_int))
     if (rc /= STATUS_OK) call raise_itb_error(rc)
   end subroutine
 

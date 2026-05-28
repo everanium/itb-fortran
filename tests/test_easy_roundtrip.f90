@@ -29,11 +29,11 @@ program test_easy_roundtrip
   character(*), parameter :: TEST_NAME = "test_easy_roundtrip"
   integer,      parameter :: PT_LEN    = 4096
   character(len=10), parameter :: HASHES(9) = &
-      [character(len=10) :: "areion256", "areion512", "siphash24",   &
-                            "aescmac",   "blake2b256", "blake2b512", &
-                            "blake2s",   "blake3",     "chacha20"]
+      [character(len=10) :: "areion256", "areion512", "blake2b256",  &
+                            "blake2b512", "blake2s",  "blake3",      &
+                            "aescmac",   "siphash24", "chacha20"]
   integer, parameter :: WIDTHS(9) = &
-      [256, 512, 128, 128, 256, 512, 256, 256, 256]
+      [256, 512, 256, 512, 256, 256, 128, 128, 256]
   integer, parameter :: CANDIDATE_KB(3) = [512, 1024, 2048]
 
   call test_new_and_destroy()

@@ -28,8 +28,13 @@ Reproduction (from `bindings/fortran/`):
 ./build.sh            # builds libitb.so + the binding's src tree
 make bench            # builds bench/bin/itb-bench-{single,triple}
 ./run_bench.sh        # full 4-pass canonical sweep
+ITB_LOCKSEED=1 ITB_LOCKBATCH=1 ./run_bench.sh   # Lock Batch performance variant
 ITB_LOCKSEED=1 ./run_bench.sh   # equivalent to passes 3 + 4 alone
 ```
+
+The `ITB_LOCKSEED=1 ITB_LOCKBATCH=1` line selects the Lock Batch
+performance variant of Lock Soup; the `ITB_LOCKSEED=1` line retains
+the baseline Lock Soup arm.
 
 Pass `FC=ifx` to drive Intel's compiler instead of gfortran:
 
@@ -66,12 +71,12 @@ table in [`../README.md`](../README.md) for the `-tags=noitbasm` opt-outs.
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 179 | 268 | 173 | 249 |
 | **Areion-SoEM-512** | 512 | PRF | 194 | 283 | 179 | 261 |
-| **SipHash-2-4** | 128 | PRF | 146 | 189 | 139 | 183 |
-| **AES-CMAC** | 128 | PRF | 180 | 254 | 168 | 232 |
-| **BLAKE2b-512** | 512 | PRF | 132 | 166 | 125 | 155 |
 | **BLAKE2b-256** | 256 | PRF | 95 | 109 | 89 | 105 |
+| **BLAKE2b-512** | 512 | PRF | 132 | 166 | 125 | 155 |
 | **BLAKE2s** | 256 | PRF | 102 | 121 | 99 | 116 |
 | **BLAKE3** | 256 | PRF | 121 | 147 | 116 | 142 |
+| **AES-CMAC** | 128 | PRF | 180 | 254 | 168 | 232 |
+| **SipHash-2-4** | 128 | PRF | 146 | 189 | 139 | 183 |
 | **ChaCha20** | 256 | PRF | 110 | 128 | 103 | 124 |
 | **Mixed** | 256 | PRF | 108 | 128 | 103 | 124 |
 
@@ -81,14 +86,53 @@ table in [`../README.md`](../README.md) for the `-tags=noitbasm` opt-outs.
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 252 | 304 | 223 | 284 |
 | **Areion-SoEM-512** | 512 | PRF | 260 | 316 | 229 | 293 |
-| **SipHash-2-4** | 128 | PRF | 182 | 204 | 165 | 191 |
-| **AES-CMAC** | 128 | PRF | 238 | 280 | 213 | 262 |
-| **BLAKE2b-512** | 512 | PRF | 157 | 172 | 137 | 151 |
 | **BLAKE2b-256** | 256 | PRF | 105 | 111 | 99 | 105 |
+| **BLAKE2b-512** | 512 | PRF | 157 | 172 | 137 | 151 |
 | **BLAKE2s** | 256 | PRF | 106 | 108 | 107 | 118 |
 | **BLAKE3** | 256 | PRF | 140 | 153 | 131 | 150 |
+| **AES-CMAC** | 128 | PRF | 238 | 280 | 213 | 262 |
+| **SipHash-2-4** | 128 | PRF | 182 | 204 | 165 | 191 |
 | **ChaCha20** | 256 | PRF | 125 | 135 | 118 | 131 |
 | **Mixed** | 256 | PRF | 123 | 133 | 117 | 130 |
+
+## Intel Core i7-11700K (16 HT, native Linux, c-shared mode, gfortran 16.1.1, Lock Seed + Lock Batch mode)
+
+The Lock Batch performance variant (`ITB_LOCKSEED=1 ITB_LOCKBATCH=1` /
+`e%set_lock_batch(1)`) batches the per-chunk Lock Soup overlay
+derivation, reducing per-chunk PRF invocations without affecting
+security under the PRF assumption. Numbers below run with
+`ITB_LOCKSEED=1 ITB_LOCKBATCH=1`, default nonce, 16 MiB payload,
+`ITB_BENCH_MIN_SEC=5`.
+
+### ITB Single 1024-bit (security: P x 2^1024)
+
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 95 | 122 | 97 | 115 |
+| **Areion-SoEM-512** | 512 | PRF | 112 | 136 | 108 | 132 |
+| **BLAKE2b-256** | 256 | PRF | 63 | 70 | 61 | 69 |
+| **BLAKE2b-512** | 512 | PRF | 89 | 103 | 85 | 100 |
+| **BLAKE2s** | 256 | PRF | 67 | 74 | 64 | 73 |
+| **BLAKE3** | 256 | PRF | 72 | 80 | 69 | 78 |
+| **AES-CMAC** | 128 | PRF | 91 | 107 | 88 | 104 |
+| **SipHash-2-4** | 128 | PRF | 81 | 93 | 78 | 90 |
+| **ChaCha20** | 256 | PRF | 67 | 75 | 66 | 73 |
+| **Mixed** | 256 | PRF | 72 | 81 | 70 | 80 |
+
+### ITB Triple 1024-bit (security: P x 2^(3x1024) = P x 2^3072)
+
+| Hash | Width | Crypto | Encrypt | Decrypt | Encrypt + MAC | Decrypt + MAC |
+|---|---|---|---|---|---|---|
+| **Areion-SoEM-256** | 256 | PRF | 150 | 192 | 157 | 184 |
+| **Areion-SoEM-512** | 512 | PRF | 187 | 212 | 163 | 197 |
+| **BLAKE2b-256** | 256 | PRF | 81 | 85 | 79 | 83 |
+| **BLAKE2b-512** | 512 | PRF | 126 | 135 | 119 | 132 |
+| **BLAKE2s** | 256 | PRF | 87 | 92 | 84 | 90 |
+| **BLAKE3** | 256 | PRF | 96 | 105 | 93 | 100 |
+| **AES-CMAC** | 128 | PRF | 147 | 160 | 138 | 157 |
+| **SipHash-2-4** | 128 | PRF | 121 | 130 | 116 | 127 |
+| **ChaCha20** | 256 | PRF | 88 | 92 | 85 | 91 |
+| **Mixed** | 256 | PRF | 97 | 104 | 94 | 102 |
 
 ## Intel Core i7-11700K (16 HT, native Linux, c-shared mode, gfortran 16.1.1, LockSeed mode)
 
@@ -102,12 +146,12 @@ on-direction. Numbers below run with all three overlays active.
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 61 | 72 | 61 | 71 |
 | **Areion-SoEM-512** | 512 | PRF | 52 | 57 | 51 | 56 |
-| **SipHash-2-4** | 128 | PRF | 68 | 77 | 66 | 75 |
-| **AES-CMAC** | 128 | PRF | 75 | 86 | 73 | 84 |
-| **BLAKE2b-512** | 512 | PRF | 48 | 50 | 47 | 50 |
 | **BLAKE2b-256** | 256 | PRF | 44 | 46 | 43 | 46 |
+| **BLAKE2b-512** | 512 | PRF | 48 | 50 | 47 | 50 |
 | **BLAKE2s** | 256 | PRF | 45 | 48 | 44 | 48 |
 | **BLAKE3** | 256 | PRF | 44 | 47 | 45 | 47 |
+| **AES-CMAC** | 128 | PRF | 75 | 86 | 73 | 84 |
+| **SipHash-2-4** | 128 | PRF | 68 | 77 | 66 | 75 |
 | **ChaCha20** | 256 | PRF | 46 | 49 | 45 | 48 |
 | **Mixed** | 256 | PRF | 43 | 55 | 49 | 55 |
 
@@ -117,12 +161,12 @@ on-direction. Numbers below run with all three overlays active.
 |---|---|---|---|---|---|---|
 | **Areion-SoEM-256** | 256 | PRF | 61 | 66 | 61 | 65 |
 | **Areion-SoEM-512** | 512 | PRF | 54 | 55 | 52 | 55 |
-| **SipHash-2-4** | 128 | PRF | 71 | 74 | 68 | 73 |
-| **AES-CMAC** | 128 | PRF | 78 | 83 | 76 | 82 |
-| **BLAKE2b-512** | 512 | PRF | 48 | 49 | 47 | 49 |
 | **BLAKE2b-256** | 256 | PRF | 44 | 45 | 43 | 45 |
+| **BLAKE2b-512** | 512 | PRF | 48 | 49 | 47 | 49 |
 | **BLAKE2s** | 256 | PRF | 46 | 47 | 45 | 46 |
 | **BLAKE3** | 256 | PRF | 45 | 47 | 44 | 46 |
+| **AES-CMAC** | 128 | PRF | 78 | 83 | 76 | 82 |
+| **SipHash-2-4** | 128 | PRF | 71 | 74 | 68 | 73 |
 | **ChaCha20** | 256 | PRF | 49 | 49 | 40 | 45 |
 | **Mixed** | 256 | PRF | 49 | 51 | 48 | 51 |
 
