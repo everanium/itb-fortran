@@ -1262,7 +1262,7 @@ from the named module.
 
 | Symbol | Purpose |
 |---|---|
-| `ITB_WRAPPER_CIPHER_AES_128_CTR / ITB_WRAPPER_CIPHER_CHACHA20 / ITB_WRAPPER_CIPHER_SIPHASH24 / ITB_WRAPPER_CIPHER_AREION_256 / ITB_WRAPPER_CIPHER_AREION_512 / ITB_WRAPPER_CIPHER_BLAKE2B_256 / ITB_WRAPPER_CIPHER_BLAKE2B_512 / ITB_WRAPPER_CIPHER_BLAKE2S / ITB_WRAPPER_CIPHER_BLAKE3` | Cipher enum constants |
+| `ITB_WRAPPER_CIPHER_AREION_256 / ITB_WRAPPER_CIPHER_AREION_512 / ITB_WRAPPER_CIPHER_BLAKE2B_256 / ITB_WRAPPER_CIPHER_BLAKE2B_512 / ITB_WRAPPER_CIPHER_BLAKE2S / ITB_WRAPPER_CIPHER_BLAKE3 / ITB_WRAPPER_CIPHER_AES_128_CTR / ITB_WRAPPER_CIPHER_SIPHASH24 / ITB_WRAPPER_CIPHER_CHACHA20 / etc...` | Cipher enum constants |
 | `itb_wrapper_cipher_name (cipher) → name` | Canonical FFI name |
 | `itb_wrapper_key_size (cipher) → bytes` / `itb_wrapper_nonce_size (cipher) → bytes` | Cipher dimension accessors |
 | `itb_wrapper_generate_key (cipher, key, status)` | CSPRNG-fresh wrapper key |
