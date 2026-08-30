@@ -4,15 +4,18 @@
 #
 # Ensures the libitb.so c-shared artefact exists at
 # dist/linux-amd64/libitb.so (rebuilds it if absent), then dispatches
-# to the Makefile to compile the binding's src/ module tree and the
-# tests/ harness in one pass.
+# to the Makefile to compile the binding's src/ module tree, the
+# tests/ harness, the bench binaries, and the eitb CLI in one pass.
 #
-# Pass FC=ifx (or any FCFLAGS=...) on the command line / env to drive
-# Intel's compiler; gfortran is the default.
+# Fortran module builds are order-sensitive (.mod files must exist
+# before dependents compile); the Makefile's hand-coded dependency
+# chain sequences that. A stale .mod cache from an interrupted build
+# is the classic failure mode -- `make clean` runs first to preclude
+# it.
 #
 # Usage:
-#   ./build.sh              # gfortran build
-#   FC=ifx ./build.sh       # ifx build (re-uses build_ifx/ tree)
+#   ./build.sh                       # gfortran build
+#   FCFLAGS=... ./build.sh           # custom flags
 
 set -eu
 set -o pipefail
@@ -31,8 +34,7 @@ fi
 
 echo "==> cleaning previous build artefacts (make clean)"
 make clean
-mkdir -p build build_ifx tests/build bench/build bench/build_ifx bench/bin
 echo "==> building Fortran binding (FC=${FC:-gfortran})"
-make tests
+make tests bench eitb
 
 echo "==> ready: ./run_tests.sh"

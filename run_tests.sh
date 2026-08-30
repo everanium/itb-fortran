@@ -7,9 +7,7 @@
 # invokes each in turn, and accumulates a pass / fail count.
 #
 # Per-binary process isolation gives every test a fresh libitb global
-# state. This sidesteps the .mod cache + shared build/ race that
-# would otherwise plague parallel runs of multiple test binaries.
-# Tests run sequentially.
+# state; tests run sequentially.
 #
 # Usage:
 #   ./run_tests.sh           # summary-only output
@@ -18,8 +16,7 @@
 set -eu
 set -o pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+cd "$(dirname "$0")"
 
 verbose=0
 case "${1:-}" in
@@ -36,9 +33,6 @@ else
     make tests >/dev/null
 fi
 
-# Resolve the test binary directory based on FC; the Makefile flips
-# to build_ifx for FC=ifx but tests/build/ is the same path either
-# way, so this is straightforward.
 TEST_BIN_DIR="tests/build"
 
 # Embedded RPATH should already point at libitb.so, but export

@@ -1,163 +1,116 @@
-! itb_test_helpers.f90 -- shared assertion vocabulary for the test suite.
-!
-! Each `tests/test_*.f90` is a standalone program; the helper module
-! defines the small set of assertions every test relies on. On any
-! assertion failure the helper writes a diagnostic to `error_unit` and
-! `error stop`s with code 1, so the standalone program drops into the
-! per-test pass/fail accounting in `run_tests.sh` cleanly. On full
-! pass, the test program calls `test_pass(name)` exactly once at the
-! end and exits with status 0.
-!
-! Tests do not print intermediate progress beyond the single PASS or
-! FAIL line; the runner captures stdout / exit code.
+! itb_test_helpers.f90 -- shared assertion module for the test
+! programs. Each tests/test_*.f90 is a standalone program; on any
+! failed assertion the process prints a diagnostic and exits with a
+! non-zero status (run_tests.sh counts per-binary pass / fail).
 
 module itb_test_helpers
-  use, intrinsic :: iso_fortran_env, only: error_unit, output_unit
-  use itb_kinds
-  use itb_errors, only: STATUS_OK, itb_status_to_string
+  use, intrinsic :: iso_c_binding, only: c_int, c_int8_t
+  use, intrinsic :: iso_fortran_env, only: error_unit, int64
+  use itb
   implicit none
   private
 
-  public :: assert_status_ok
-  public :: assert_status_eq
-  public :: assert_true
-  public :: assert_false
-  public :: assert_int_eq
-  public :: assert_size_eq
-  public :: assert_string_eq
-  public :: assert_bytes_eq
-  public :: assert_u64_array_eq
-  public :: test_pass
-  public :: test_fail
+  public :: check, expect_ok, expect_status, check_bytes_equal, &
+            test_done, byte_of, fill_mod, fill_xorshift
 
 contains
 
-  subroutine test_fail(test_name, message)
-    character(*), intent(in) :: test_name, message
-    write (error_unit, "(A,A,A,A)") "FAIL: ", trim(test_name), ": ", trim(message)
-    error stop 1
-  end subroutine
+  ! Hard assertion: prints the label and aborts on a false condition.
+  subroutine check(cond, label)
+    logical, intent(in)      :: cond
+    character(*), intent(in) :: label
 
-  subroutine test_pass(test_name)
-    character(*), intent(in) :: test_name
-    write (output_unit, "(A,A)") "PASS: ", trim(test_name)
-    flush (output_unit)
-  end subroutine
-
-  subroutine assert_status_ok(test_name, label, status)
-    character(*),             intent(in) :: test_name, label
-    integer(itb_status_kind), intent(in) :: status
-    character(:), allocatable :: name, msg
-    if (status == STATUS_OK) return
-    name = itb_status_to_string(status)
-    allocate (character(256) :: msg)
-    write (msg, "(A,A,I0,A,A,A)") trim(label), " -- expected STATUS_OK, got ", &
-                                    status, " (", trim(name), ")"
-    call test_fail(test_name, msg)
-  end subroutine
-
-  subroutine assert_status_eq(test_name, label, status, expected)
-    character(*),             intent(in) :: test_name, label
-    integer(itb_status_kind), intent(in) :: status, expected
-    character(:), allocatable :: got_name, exp_name, msg
-    if (status == expected) return
-    got_name = itb_status_to_string(status)
-    exp_name = itb_status_to_string(expected)
-    allocate (character(384) :: msg)
-    write (msg, "(A,A,I0,A,A,A,I0,A,A,A)") trim(label), &
-        " -- expected ", expected, " (", trim(exp_name), &
-        "), got ", status, " (", trim(got_name), ")"
-    call test_fail(test_name, msg)
-  end subroutine
-
-  subroutine assert_true(test_name, label, condition)
-    character(*), intent(in) :: test_name, label
-    logical,      intent(in) :: condition
-    character(:), allocatable :: msg
-    if (condition) return
-    msg = trim(label) // " -- expected .true., got .false."
-    call test_fail(test_name, msg)
-  end subroutine
-
-  subroutine assert_false(test_name, label, condition)
-    character(*), intent(in) :: test_name, label
-    logical,      intent(in) :: condition
-    character(:), allocatable :: msg
-    if (.not. condition) return
-    msg = trim(label) // " -- expected .false., got .true."
-    call test_fail(test_name, msg)
-  end subroutine
-
-  subroutine assert_int_eq(test_name, label, got, expected)
-    character(*), intent(in) :: test_name, label
-    integer,      intent(in) :: got, expected
-    character(:), allocatable :: msg
-    if (got == expected) return
-    allocate (character(256) :: msg)
-    write (msg, "(A,A,I0,A,I0)") trim(label), " -- expected ", expected, ", got ", got
-    call test_fail(test_name, msg)
-  end subroutine
-
-  subroutine assert_size_eq(test_name, label, got, expected)
-    character(*),                intent(in) :: test_name, label
-    integer(itb_size_kind),      intent(in) :: got, expected
-    character(:), allocatable :: msg
-    if (got == expected) return
-    allocate (character(256) :: msg)
-    write (msg, "(A,A,I0,A,I0)") trim(label), " -- expected ", expected, ", got ", got
-    call test_fail(test_name, msg)
-  end subroutine
-
-  subroutine assert_string_eq(test_name, label, got, expected)
-    character(*), intent(in) :: test_name, label, got, expected
-    character(:), allocatable :: msg
-    if (trim(got) == trim(expected)) return
-    msg = trim(label) // " -- expected '" // trim(expected) // "', got '" // trim(got) // "'"
-    call test_fail(test_name, msg)
-  end subroutine
-
-  subroutine assert_bytes_eq(test_name, label, got, expected)
-    character(*),           intent(in) :: test_name, label
-    integer(itb_byte_kind), intent(in) :: got(:), expected(:)
-    character(:), allocatable :: msg
-    integer :: i, ng, ne
-    ng = size(got); ne = size(expected)
-    if (ng /= ne) then
-      allocate (character(256) :: msg)
-      write (msg, "(A,A,I0,A,I0)") trim(label), &
-          " -- length mismatch: expected ", ne, ", got ", ng
-      call test_fail(test_name, msg)
+    if (.not. cond) then
+      write (error_unit, '(a)') "FAIL: "//label
+      error stop 1
     end if
-    do i = 1, ng
-      if (got(i) /= expected(i)) then
-        allocate (character(256) :: msg)
-        write (msg, "(A,A,I0,A,I0,A,I0)") trim(label), &
-            " -- byte mismatch at index ", i, &
-            ": expected ", iand(int(expected(i)), 255), &
-            ", got ", iand(int(got(i)), 255)
-        call test_fail(test_name, msg)
+  end subroutine
+
+  ! Asserts the error record carries no error.
+  subroutine expect_ok(err, label)
+    type(itb_error_t), intent(in) :: err
+    character(*), intent(in)      :: label
+
+    if (.not. itb_ok(err)) then
+      write (error_unit, '(a)') "FAIL: "//label//": "//itb_error_text(err)
+      error stop 1
+    end if
+  end subroutine
+
+  ! Asserts the error record carries exactly the expected status.
+  subroutine expect_status(err, expected, label)
+    type(itb_error_t), intent(in) :: err
+    integer(c_int), intent(in)    :: expected
+    character(*), intent(in)      :: label
+
+    if (err%status /= expected) then
+      write (error_unit, '(a,i0,a)') "FAIL: "//label// &
+          ": expected status ", expected, ", got "//itb_error_text(err)
+      error stop 1
+    end if
+  end subroutine
+
+  ! Asserts two byte arrays are identical (length + content).
+  subroutine check_bytes_equal(a, b, label)
+    integer(c_int8_t), intent(in) :: a(:), b(:)
+    character(*), intent(in)      :: label
+
+    if (size(a) /= size(b)) then
+      write (error_unit, '(a,i0,a,i0)') "FAIL: "//label// &
+          ": length mismatch ", size(a), " vs ", size(b)
+      error stop 1
+    end if
+    if (size(a) > 0) then
+      if (.not. all(a == b)) then
+        write (error_unit, '(a)') "FAIL: "//label//": content mismatch"
+        error stop 1
       end if
+    end if
+  end subroutine
+
+  ! Prints the per-binary pass line (reaching here means every
+  ! assertion held).
+  subroutine test_done(name)
+    character(*), intent(in) :: name
+    print '(a)', "PASS "//name
+  end subroutine
+
+  ! Maps 0..255 (any integer, taken modulo 256) onto the signed
+  ! int8 byte carrying the same bit pattern.
+  pure function byte_of(v) result(b)
+    integer, intent(in) :: v
+    integer(c_int8_t)   :: b
+    integer :: m
+
+    m = modulo(v, 256)
+    if (m > 127) m = m - 256
+    b = int(m, c_int8_t)
+  end function
+
+  ! Deterministic fill: buf(i) = (i-1) mod m.
+  subroutine fill_mod(buf, m)
+    integer(c_int8_t), intent(out) :: buf(:)
+    integer, intent(in)            :: m
+    integer :: i
+
+    do i = 1, size(buf)
+      buf(i) = byte_of(modulo(i - 1, m))
     end do
   end subroutine
 
-  subroutine assert_u64_array_eq(test_name, label, got, expected)
-    character(*),          intent(in) :: test_name, label
-    integer(itb_u64_kind), intent(in) :: got(:), expected(:)
-    character(:), allocatable :: msg
-    integer :: i, ng, ne
-    ng = size(got); ne = size(expected)
-    if (ng /= ne) then
-      allocate (character(256) :: msg)
-      write (msg, "(A,A,I0,A,I0)") trim(label), &
-          " -- length mismatch: expected ", ne, ", got ", ng
-      call test_fail(test_name, msg)
-    end if
-    do i = 1, ng
-      if (got(i) /= expected(i)) then
-        allocate (character(256) :: msg)
-        write (msg, "(A,A,I0)") trim(label), " -- u64 element mismatch at index ", i
-        call test_fail(test_name, msg)
-      end if
+  ! Deterministic non-trivial payload (xorshift64 fill).
+  subroutine fill_xorshift(buf, seed)
+    integer(c_int8_t), intent(out) :: buf(:)
+    integer(int64), intent(in)     :: seed
+    integer(int64) :: x
+    integer :: i
+
+    x = ior(seed, 1_int64)
+    do i = 1, size(buf)
+      x = ieor(x, ishft(x, 13))
+      x = ieor(x, ishft(x, -7))
+      x = ieor(x, ishft(x, 17))
+      buf(i) = int(ibits(x, 0, 8) - merge(256_int64, 0_int64, ibits(x, 0, 8) > 127), c_int8_t)
     end do
   end subroutine
 
