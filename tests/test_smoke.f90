@@ -1,4 +1,4 @@
-! Init -> blob -> Open -> EncryptMessage -> DecryptMessage round trip.
+! Init -> Save -> Load -> EncryptMessage -> DecryptMessage round trip.
 
 program test_smoke
   use itb
@@ -8,16 +8,17 @@ program test_smoke
   type(itb_opts_t)     :: opts
   type(itb_pipeline_t) :: sender, receiver
   type(itb_error_t)    :: err
-  integer(c_int8_t), allocatable :: plain(:), wire(:), back(:)
+  integer(c_int8_t), allocatable :: plain(:), wire(:), back(:), blob(:)
   integer :: i
 
   call itb_pipeline_init(sender, "singlemsg-triple-mac-v1", opts, err)
   call expect_ok(err, "init")
-  call check(size(sender%blob) > 0, "blob non-empty")
+  call itb_pipeline_save(sender, blob, err)
+  call expect_ok(err, "save")
+  call check(size(blob) > 0, "blob non-empty")
 
-  call itb_pipeline_open(receiver, "singlemsg-triple-mac-v1", &
-      sender%blob, opts, err)
-  call expect_ok(err, "open")
+  call load_from(sender, receiver, err)
+  call expect_ok(err, "load")
 
   allocate (plain(24))
   do i = 1, size(plain)

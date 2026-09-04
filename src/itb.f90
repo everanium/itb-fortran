@@ -3,12 +3,15 @@
 !
 ! `use itb` re-exports the whole public surface:
 !
-!   * itb_pipeline_t + init / open / rekey / close / free
+!   * itb_pipeline_t + init / load / load_f / save / save_f / rekey /
+!     max_workers / close / free
 !   * Single Message encrypt / decrypt, one-shot stream encrypt /
 !     decrypt, whole-buffer stream pumps
 !   * itb_stream_t incremental sessions (begin / write / end / read /
 !     drain_all / free)
-!   * itb_opts_t URL-query builder + itb_register_profile
+!   * itb_opts_t URL-query builder for init overrides
+!   * profile records: itb_inspect / itb_register / itb_lookup /
+!     itb_profiles (JSON strings)
 !   * itb_error_t + status constants + labels
 !   * Go runtime knobs, library version, hash-registry accessors
 !

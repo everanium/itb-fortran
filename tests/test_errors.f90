@@ -1,5 +1,5 @@
-! Error-mapping surface: opaque-string relay, closed Pipeline,
-! duplicate profile registration (with an 8-entry innerHashes
+! Error-mapping surface: opaque-string relay, unknown profile, closed
+! Pipeline, duplicate profile registration (with an 8-entry hashes
 ! constellation), and the runtime accessors.
 
 program test_errors
@@ -7,17 +7,32 @@ program test_errors
   use itb_test_helpers
   implicit none
 
-  type(itb_opts_t)     :: empty, bad_key, mixed, bad_hash
+  character(*), parameter :: MIXED = &
+      '{"mode":"singlemsg-nomac","width":256,' // &
+      '"hashes":["blake3","blake2s","areion256","blake2b256",' // &
+      '"chacha20","blake3","blake2s","areion256"],' // &
+      '"keybits":1024,"wrapper":false,"parallax":false}'
+
+  type(itb_opts_t)     :: empty, bad_key, neg, bad_hash
   type(itb_pipeline_t) :: pipe, sender, receiver
   type(itb_error_t)    :: err
-  integer(c_int8_t), allocatable :: plain(:), wire(:), back(:)
-  character(:), allocatable :: version, name
+  integer(c_int8_t), allocatable :: plain(:), wire(:), back(:), blob(:)
+  character(:), allocatable :: version, json
   integer :: i
 
-  ! Unknown profile is BadInput with a non-empty diagnostic.
+  ! Unknown profile is UnknownProfile with a non-empty diagnostic, on
+  ! init and on lookup alike.
   call itb_pipeline_init(pipe, "no-such-profile", empty, err)
-  call expect_status(err, ITB_STATUS_BAD_INPUT, "unknown profile")
+  call expect_status(err, ITB_STATUS_UNKNOWN_PROFILE, "unknown profile")
   call check(len(err%message) > 0, "diagnostic non-empty")
+  call itb_lookup("no-such-profile", json, err)
+  call expect_status(err, ITB_STATUS_UNKNOWN_PROFILE, "lookup unknown profile")
+
+  ! A negative maxWorkers opts value is clamped, not rejected.
+  call itb_opts_set(neg, "maxWorkers", "-1")
+  call itb_pipeline_init(pipe, "singlemsg-triple-mac-v1", neg, err)
+  call expect_ok(err, "init maxWorkers=-1")
+  call itb_pipeline_free(pipe)
 
   ! Typoed opts key (lowercase s) -- Go rejects unknown keys.
   call itb_opts_set(bad_key, "chunksize", "4096")
@@ -35,26 +50,35 @@ program test_errors
   plain = byte_of(1)
   call itb_encrypt_message(pipe, plain, wire, err)
   call expect_status(err, ITB_STATUS_TRIPLE_CLOSED, "closed pipeline")
+  call itb_pipeline_save(pipe, blob, err)
+  call expect_status(err, ITB_STATUS_TRIPLE_CLOSED, "closed save")
+  call itb_pipeline_max_workers(pipe, 2, err)
+  call expect_status(err, ITB_STATUS_TRIPLE_CLOSED, "closed max_workers")
   call itb_pipeline_free(pipe)
 
-  ! Register an 8-entry width-256 innerHashes constellation, layers
-  ! off; the registered profile round-trips; a duplicate name is a
-  ! distinct status.
-  call itb_opts_set(mixed, "mode", "singlemsg-nomac")
-  call itb_opts_set(mixed, "width", "256")
-  call itb_opts_set(mixed, "innerHashes", &
-      "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256")
-  call itb_opts_set(mixed, "keyBits", "1024")
-  call itb_opts_set(mixed, "parallaxOn", "false")
-  call itb_opts_set(mixed, "wrapperOn", "false")
-  call itb_register_profile("fortran-binding-test-mixed", mixed, err)
+  ! Register an 8-entry width-256 hashes constellation, layers off,
+  ! from a profile JSON record; the registered profile round-trips
+  ! and reads back; a duplicate name is a distinct status.
+  call itb_register("fortran-binding-test-mixed", MIXED, err)
   call expect_ok(err, "register profile")
+  call itb_lookup("fortran-binding-test-mixed", json, err)
+  call expect_ok(err, "lookup registered")
+  call check(index(json, '"name":"fortran-binding-test-mixed"') > 0, &
+      "lookup carries the name")
+  call check(index(json, '"hashes":["blake3","blake2s"') > 0, &
+      "lookup carries the hashes")
+
+  ! A non-empty name inside the record must equal the argument.
+  call itb_register("fortran-binding-test-mismatch", &
+      '{"name":"other","mode":"singlemsg-nomac","width":512,' // &
+      '"hash":"areion512","keybits":1024,"wrapper":false,"parallax":false}', &
+      err)
+  call expect_status(err, ITB_STATUS_BAD_INPUT, "name mismatch")
 
   call itb_pipeline_init(sender, "fortran-binding-test-mixed", empty, err)
   call expect_ok(err, "init registered profile")
-  call itb_pipeline_open(receiver, "fortran-binding-test-mixed", &
-      sender%blob, empty, err)
-  call expect_ok(err, "open registered profile")
+  call load_from(sender, receiver, err)
+  call expect_ok(err, "load registered profile")
   deallocate (plain)
   allocate (plain(14))
   do i = 1, size(plain)
@@ -68,7 +92,7 @@ program test_errors
   call itb_pipeline_free(receiver)
   call itb_pipeline_free(sender)
 
-  call itb_register_profile("fortran-binding-test-mixed", mixed, err)
+  call itb_register("fortran-binding-test-mixed", MIXED, err)
   call expect_status(err, ITB_STATUS_PROFILE_EXISTS, "duplicate profile")
 
   ! An unknown inner-hash name is relayed to Go and rejected there --
@@ -81,11 +105,6 @@ program test_errors
   call itb_version(version, err)
   call expect_ok(err, "version")
   call check(len(version) > 0, "version non-empty")
-  call check(itb_hash_count() > 0, "hash count positive")
-  call itb_hash_name(0, name, err)
-  call expect_ok(err, "hash name 0")
-  call check(len(name) > 0, "hash name non-empty")
-  call check(itb_hash_width(0) > 0, "hash width positive")
 
   call test_done("test_errors")
 end program

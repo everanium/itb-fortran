@@ -3,12 +3,14 @@
 ! Subcommands:
 !
 !   eitb version                                   library + binding versions
-!   eitb hashes                                    shipped hash primitive roster
+!   eitb profiles                                  registered profile catalogue
 !   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
 !   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 !
 ! `encrypt` prints the session blob to stderr as hex; feed that hex
-! back to `decrypt` on the receiving side.
+! back to `decrypt` on the receiving side. `profiles` lists the
+! registered profile catalogue one name per line; the profiles that
+! carry a cipher surface are the ones `encrypt` / `decrypt` accept.
 
 program eitb
   use, intrinsic :: iso_c_binding, only: c_int, c_int8_t, c_int64_t
@@ -32,8 +34,8 @@ program eitb
   select case (cmd)
   case ("version")
     call cmd_version()
-  case ("hashes")
-    call cmd_hashes()
+  case ("profiles")
+    call cmd_profiles()
   case ("encrypt")
     if (command_argument_count() /= 4) call usage()
     call cmd_encrypt(argument(2), argument(3), argument(4))
@@ -48,7 +50,7 @@ contains
 
   subroutine usage()
     write (error_unit, '(a)') "usage: eitb version"
-    write (error_unit, '(a)') "       eitb hashes"
+    write (error_unit, '(a)') "       eitb profiles"
     write (error_unit, '(a)') "       eitb encrypt <profile> <in-file> <out-file>"
     write (error_unit, '(a)') "       eitb decrypt <profile> <blob-hex> <in-file> <out-file>"
     error stop 2
@@ -82,18 +84,28 @@ contains
     print '(a)', "itb-fortran "//ITB_BINDING_VERSION
   end subroutine
 
-  subroutine cmd_hashes()
-    character(:), allocatable :: name
+  ! Prints the registered profile catalogue one name per line in the
+  ! sorted order itb_profiles returns. The catalogue arrives as a JSON
+  ! array of strings; profile names are restricted to [a-z0-9-], so
+  ! each quoted run is one complete name and no escape handling is
+  ! needed.
+  subroutine cmd_profiles()
+    character(:), allocatable :: json
     type(itb_error_t) :: err
-    character(len=12) :: name_col
-    integer(c_int) :: i, n
+    integer :: i, start
 
-    n = itb_hash_count()
-    do i = 0, n - 1
-      call itb_hash_name(i, name, err)
-      if (.not. itb_ok(err)) call fail("hashes", err)
-      name_col = name
-      print '(i2,2x,a,1x,i0,a)', i, name_col, itb_hash_width(i), " bits"
+    call itb_profiles(json, err)
+    if (.not. itb_ok(err)) call fail("profiles", err)
+    start = 0
+    do i = 1, len(json)
+      if (json(i:i) == '"') then
+        if (start == 0) then
+          start = i + 1
+        else
+          print '(a)', json(start:i - 1)
+          start = 0
+        end if
+      end if
     end do
   end subroutine
 
@@ -130,7 +142,7 @@ contains
     type(itb_opts_t)     :: opts
     type(itb_pipeline_t) :: pipe
     type(itb_error_t)    :: err
-    integer(c_int8_t), allocatable :: plain(:), wire(:)
+    integer(c_int8_t), allocatable :: plain(:), wire(:), blob(:)
 
     call read_file(infile, plain)
     call itb_pipeline_init(pipe, profile, opts, err)
@@ -143,7 +155,9 @@ contains
     if (.not. itb_ok(err)) call fail("encrypt", err)
     call ensure_parent_dir(outfile)
     call write_file(outfile, wire)
-    write (error_unit, '(a)') hex_encode(pipe%blob)
+    call itb_pipeline_save(pipe, blob, err)
+    if (.not. itb_ok(err)) call fail("save", err)
+    write (error_unit, '(a)') hex_encode(blob)
     print '(a,i0,a,i0,a)', "encrypted "//infile//" -> "//outfile// &
         " (", size(plain), " -> ", size(wire), " bytes)"
     call itb_pipeline_free(pipe)
@@ -151,15 +165,16 @@ contains
 
   subroutine cmd_decrypt(profile, blob_hex, infile, outfile)
     character(*), intent(in) :: profile, blob_hex, infile, outfile
-    type(itb_opts_t)     :: opts
     type(itb_pipeline_t) :: pipe
     type(itb_error_t)    :: err
     integer(c_int8_t), allocatable :: blob(:), wire(:), plain(:)
 
     call hex_decode(blob_hex, blob)
     call read_file(infile, wire)
-    call itb_pipeline_open(pipe, profile, blob, opts, err)
-    if (.not. itb_ok(err)) call fail("open", err)
+    ! The profile shape travels inside the blob; the profile argument
+    ! only selects the Single Message or streaming cipher pair.
+    call itb_pipeline_load(pipe, blob, err)
+    if (.not. itb_ok(err)) call fail("load", err)
     if (is_streaming_profile(profile)) then
       call itb_decrypt_stream_one_shot(pipe, wire, plain, err)
     else

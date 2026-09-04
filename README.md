@@ -13,10 +13,12 @@ embedded RPATH) — no runtime symbol loading. Every hash-name /
 MAC-name / cipher-name / profile-name is an opaque `character(*)`
 passed through to Go for validation; the binding carries no ITB
 construction logic. The public surface is one `itb_pipeline_t`
-handle (init / open / rekey / close / free, Single Message encrypt /
-decrypt, whole-buffer stream pumps, incremental `itb_stream_t`
-sessions with write / end / read), an `itb_opts_t` query-string
-builder, `itb_register_profile`, and the Go runtime knobs.
+handle (init / load / save / rekey / close / free, Single Message
+encrypt / decrypt, whole-buffer stream pumps, incremental
+`itb_stream_t` sessions with write / end / read), an `itb_opts_t`
+query-string builder for init overrides, the profile-record entries
+(`itb_register` / `itb_lookup` / `itb_profiles` / `itb_inspect`),
+and the Go runtime knobs.
 
 ## Prerequisites (Arch Linux)
 
@@ -59,19 +61,20 @@ so `build.sh` runs `make clean` first.
   capture.
 - `src/itb_opts.f90` — `itb_opts_t` URL-query builder (opaque
   key/value pass-through).
-- `src/itb_pipeline.f90` — `itb_pipeline_t` lifecycle + the
-  buffer-in / buffer-out cipher paths + `itb_register_profile`.
+- `src/itb_pipeline.f90` — `itb_pipeline_t` lifecycle (init / load /
+  save / rekey) + the buffer-in / buffer-out cipher paths + the
+  profile-record entries.
 - `src/itb_stream.f90` — incremental `itb_stream_t` sessions +
   whole-buffer pumps.
-- `src/itb_runtime.f90` — Go runtime knobs, library version, hash
-  registry accessors.
+- `src/itb_runtime.f90` — Go runtime knobs and library version.
 - `src/itb_ffi.f90` — internal `bind(C)` interface declarations +
   C-string marshalling.
 
 ## Lifetime discipline
 
 Fortran has no destructors. Every successful `itb_pipeline_init` /
-`itb_pipeline_open` must be paired with exactly one
+`itb_pipeline_load` / `itb_pipeline_load_f` must be paired with
+exactly one
 `itb_pipeline_free` call (libitb zeroes key material on free);
 `itb_pipeline_close` zeroes early without releasing the handle, and
 subsequent cipher calls return `ITB_STATUS_TRIPLE_CLOSED`. Every
@@ -89,12 +92,13 @@ program round_trip
   type(itb_opts_t)     :: opts
   type(itb_pipeline_t) :: sender, receiver
   type(itb_error_t)    :: err
-  integer(c_int8_t), allocatable :: plain(:), wire(:), back(:)
+  integer(c_int8_t), allocatable :: plain(:), wire(:), back(:), blob(:)
 
   call itb_pipeline_init(sender, "singlemsg-triple-mac-v1", opts, err)
   if (.not. itb_ok(err)) stop 1
-  call itb_pipeline_open(receiver, "singlemsg-triple-mac-v1", &
-      sender%blob, opts, err)
+  call itb_pipeline_save(sender, blob, err)
+  if (.not. itb_ok(err)) stop 1
+  call itb_pipeline_load(receiver, blob, err)
   if (.not. itb_ok(err)) stop 1
 
   plain = [integer(c_int8_t) :: 104, 101, 108, 108, 111]
@@ -109,29 +113,89 @@ program round_trip
 end program
 ```
 
-`itb_opts_t` overrides the profile default per call (chunk size,
-outer cipher, parallax on/off, wrapper on/off, MAC name, palette);
-every setter goes through `itb_opts_set(opts, key, value)`:
+`itb_opts_t` overrides the profile default at init (chunk size,
+outer cipher, parallax on/off, wrapper on/off, MAC name, palette,
+worker cap); every setter goes through `itb_opts_set(opts, key,
+value)`. The resolved shape travels inside the blob, so the receiver
+needs no options of its own:
 
 ```fortran
 call itb_opts_set(opts, "chunkSize", "65536")
 call itb_opts_set(opts, "withWrapper", "false")
+call itb_opts_set(opts, "maxWorkers", "4")
 call itb_pipeline_init(sender, "singlemsg-triple-mac-v1", opts, err)
-call itb_pipeline_open(receiver, "singlemsg-triple-mac-v1", &
-    sender%blob, opts, err)
 ```
 
 `itb_pipeline_rekey` rotates the parallax + wrapper masters
 mid-session (the eight ITB seeds and MAC key are fixed for the
-session lifetime by design); the receiver picks up the new masters
-through a fresh `sender%blob` handshake:
+session lifetime by design) and hands back the fresh blob through
+its optional trailing argument; the receiver picks up the new
+masters by loading it:
 
 ```fortran
 integer(c_int8_t) :: perm(32), wrap(32)
+integer(c_int8_t), allocatable :: rotated(:)
 perm = 17_c_int8_t; wrap = 34_c_int8_t
-call itb_pipeline_rekey(sender, perm, wrap, err)
-call itb_pipeline_open(receiver, "singlemsg-triple-mac-v1", &
-    sender%blob, opts, err)
+call itb_pipeline_rekey(sender, perm, wrap, err, rotated)
+call itb_pipeline_load(receiver, rotated, err)
+```
+
+The same rotation is available on the receiver side as a master
+override pair on load: `call itb_pipeline_load(receiver, blob, err,
+perm_master=perm, wrap_master=wrap)` reopens the blob with fresh
+masters folded in.
+
+## Persisting sessions
+
+The blob returned by `itb_pipeline_save` is a self-describing session
+bundle: it carries the resolved profile record, the inner key
+material, and the parallax / wrapper masters. `itb_pipeline_load`
+reconstructs a Pipeline from it without naming a profile.
+
+```fortran
+character(:), allocatable :: profile
+call itb_pipeline_save(sender, blob, err)          ! current blob bytes
+call itb_pipeline_load(receiver, blob, err)        ! reopen from bytes
+call itb_pipeline_save_f(sender, "session.blob", err)      ! write to a file (mode 0600)
+call itb_pipeline_load_f(receiver2, "session.blob", err)   ! reopen from a file
+call itb_inspect(blob, profile, err)               ! profile record, no Pipeline
+! profile: {"name":"singlemsg-triple-mac-v1","mode":"singlemsg-mac",...}
+```
+
+`itb_inspect` decodes the embedded profile record (a JSON object)
+without constructing a Pipeline. `itb_pipeline_save_f` /
+`itb_pipeline_load_f` perform the file access inside libitb.
+
+Load works for blobs generated with shipped primitives (every entry in
+the shipped catalogue). Blobs generated by Go programs that use
+`hashes.Register` or `macs.Register` to install custom primitives
+cannot be loaded through this binding — the receiver must use the Go
+library directly and register the same custom primitive under the
+same name before opening. Attempting to load such a blob through this
+binding surfaces `ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN`.
+
+**Runtime tuning.** The worker cap is per-machine and never travels
+in the blob; the receiver may pick its own after load:
+
+```fortran
+call itb_pipeline_max_workers(receiver, 4, err)   ! clamped by libitb; <= 0 selects auto
+```
+
+## Profile registry
+
+`itb_register` installs a user-defined profile under a new name from
+a profile JSON record; `itb_lookup` reads a registered record back;
+`itb_profiles` lists every registered name as a JSON array. The
+record's field rules are enforced by libitb; the binding treats the
+JSON as an opaque `character(*)`.
+
+```fortran
+character(:), allocatable :: record, names
+call itb_register("my-nomac-plain", &
+    '{"mode":"singlemsg-nomac","width":512,"hash":"areion512",' // &
+    '"keybits":1024,"wrapper":false,"parallax":false}', err)
+call itb_lookup("my-nomac-plain", record, err)   ! record with "name" filled in
+call itb_profiles(names, err)                    ! ["blob-triple-mac-v1", ...]
 ```
 
 Bytes cross the surface as `integer(c_int8_t)` arrays; output arrays
@@ -198,10 +262,21 @@ A small CLI under `bindings/fortran/eitb/` mirrors the shipped Go
 ```bash
 cd bindings/fortran && make eitb
 ./eitb/eitb version
-./eitb/eitb hashes
+./eitb/eitb profiles
 ./eitb/eitb encrypt singlemsg-triple-mac-v1 in.bin out.bin  # blob hex on stderr
 ./eitb/eitb decrypt singlemsg-triple-mac-v1 <blob-hex> out.bin back.bin
 ```
+
+`decrypt` reopens the session with `itb_pipeline_load` from the blob
+hex; the profile argument only selects the Single Message or
+streaming cipher pair.
+
+## itb3 CLI
+
+The shipped `itb3` binary under `cmd/itb3/` of the main repository
+generates profile files (`.json` on disk) that this binding reopens
+via `itb_pipeline_load_f`; the same utility also encrypts and
+decrypts files directly. See `cmd/itb3/README.md` for full usage.
 
 ## Limitations
 

@@ -45,27 +45,6 @@ module itb_ffi
       integer(c_int)           :: rc
     end function
 
-    function c_itb_hash_count() bind(C, name="ITB_HashCount") result(n)
-      import
-      integer(c_int) :: n
-    end function
-
-    function c_itb_hash_name(i, out, cap_bytes, out_len) &
-        bind(C, name="ITB_HashName") result(rc)
-      import
-      integer(c_int), value    :: i
-      type(c_ptr), value       :: out
-      integer(c_size_t), value :: cap_bytes
-      integer(c_size_t)        :: out_len
-      integer(c_int)           :: rc
-    end function
-
-    function c_itb_hash_width(i) bind(C, name="ITB_HashWidth") result(w)
-      import
-      integer(c_int), value :: i
-      integer(c_int)        :: w
-    end function
-
     function c_itb_set_memory_limit(limit) &
         bind(C, name="ITB_SetMemoryLimit") result(prev)
       import
@@ -94,14 +73,12 @@ module itb_ffi
       integer(c_int)           :: rc
     end function
 
-    function c_itb_triple_open(profile, blob, blob_len, opts, &
-        perm_master, perm_master_len, wrap_master, wrap_master_len, &
-        masters_count, out_handle) bind(C, name="ITB_Triple_Open") result(rc)
+    function c_itb_triple_load(blob, blob_len, perm_master, &
+        perm_master_len, wrap_master, wrap_master_len, masters_count, &
+        out_handle) bind(C, name="ITB_Triple_Load") result(rc)
       import
-      type(c_ptr), value       :: profile
       type(c_ptr), value       :: blob
       integer(c_size_t), value :: blob_len
-      type(c_ptr), value       :: opts
       type(c_ptr), value       :: perm_master
       integer(c_size_t), value :: perm_master_len
       type(c_ptr), value       :: wrap_master
@@ -109,6 +86,57 @@ module itb_ffi
       integer(c_size_t), value :: masters_count
       integer(c_intptr_t)      :: out_handle
       integer(c_int)           :: rc
+    end function
+
+    function c_itb_triple_load_f(path, perm_master, perm_master_len, &
+        wrap_master, wrap_master_len, masters_count, out_handle) &
+        bind(C, name="ITB_Triple_LoadF") result(rc)
+      import
+      type(c_ptr), value       :: path
+      type(c_ptr), value       :: perm_master
+      integer(c_size_t), value :: perm_master_len
+      type(c_ptr), value       :: wrap_master
+      integer(c_size_t), value :: wrap_master_len
+      integer(c_size_t), value :: masters_count
+      integer(c_intptr_t)      :: out_handle
+      integer(c_int)           :: rc
+    end function
+
+    function c_itb_triple_save(handle, blob_out, blob_cap, blob_len) &
+        bind(C, name="ITB_Triple_Save") result(rc)
+      import
+      integer(c_intptr_t), value :: handle
+      type(c_ptr), value         :: blob_out
+      integer(c_size_t), value   :: blob_cap
+      integer(c_size_t)          :: blob_len
+      integer(c_int)             :: rc
+    end function
+
+    function c_itb_triple_save_f(handle, path) &
+        bind(C, name="ITB_Triple_SaveF") result(rc)
+      import
+      integer(c_intptr_t), value :: handle
+      type(c_ptr), value         :: path
+      integer(c_int)             :: rc
+    end function
+
+    function c_itb_triple_inspect(blob, blob_len, json_out, json_cap, &
+        json_len) bind(C, name="ITB_Triple_Inspect") result(rc)
+      import
+      type(c_ptr), value       :: blob
+      integer(c_size_t), value :: blob_len
+      type(c_ptr), value       :: json_out
+      integer(c_size_t), value :: json_cap
+      integer(c_size_t)        :: json_len
+      integer(c_int)           :: rc
+    end function
+
+    function c_itb_triple_max_workers(handle, n) &
+        bind(C, name="ITB_Triple_MaxWorkers") result(rc)
+      import
+      integer(c_intptr_t), value :: handle
+      integer(c_int), value      :: n
+      integer(c_int)             :: rc
     end function
 
     function c_itb_triple_rekey(handle, perm_master, perm_master_len, &
@@ -140,12 +168,31 @@ module itb_ffi
       integer(c_int)             :: rc
     end function
 
-    function c_itb_triple_register_profile(name, opts) &
-        bind(C, name="ITB_Triple_RegisterProfile") result(rc)
+    function c_itb_triple_register(name, profile_json) &
+        bind(C, name="ITB_Triple_Register") result(rc)
       import
       type(c_ptr), value :: name
-      type(c_ptr), value :: opts
+      type(c_ptr), value :: profile_json
       integer(c_int)     :: rc
+    end function
+
+    function c_itb_triple_lookup(name, json_out, json_cap, json_len) &
+        bind(C, name="ITB_Triple_Lookup") result(rc)
+      import
+      type(c_ptr), value       :: name
+      type(c_ptr), value       :: json_out
+      integer(c_size_t), value :: json_cap
+      integer(c_size_t)        :: json_len
+      integer(c_int)           :: rc
+    end function
+
+    function c_itb_triple_profiles(json_out, json_cap, json_len) &
+        bind(C, name="ITB_Triple_Profiles") result(rc)
+      import
+      type(c_ptr), value       :: json_out
+      integer(c_size_t), value :: json_cap
+      integer(c_size_t)        :: json_len
+      integer(c_int)           :: rc
     end function
 
     ! ---- Triple Pipeline cipher paths ------------------------------

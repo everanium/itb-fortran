@@ -29,7 +29,7 @@ program test_stream_cancel
   call itb_stream_free(sess)
 
   ! The Pipeline stays usable after the cancelled session.
-  call itb_pipeline_open(receiver, PROFILE, sender%blob, opts, err)
+  call load_from(sender, receiver, err)
   call expect_ok(err, "open")
   allocate (plain(13))
   do i = 1, size(plain)

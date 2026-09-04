@@ -22,6 +22,9 @@ module itb_status
   integer(c_int), parameter, public :: ITB_STATUS_SEED_WIDTH_MIX       = 8
   integer(c_int), parameter, public :: ITB_STATUS_BAD_MAC              = 9
   integer(c_int), parameter, public :: ITB_STATUS_MAC_FAILURE          = 10
+  integer(c_int), parameter, public :: ITB_STATUS_BLOB_MALFORMED_RECIPE    = 11
+  integer(c_int), parameter, public :: ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN = 12
+  integer(c_int), parameter, public :: ITB_STATUS_UNKNOWN_PROFILE          = 13
   integer(c_int), parameter, public :: ITB_STATUS_BLOB_MODE_MISMATCH   = 19
   integer(c_int), parameter, public :: ITB_STATUS_BLOB_MALFORMED       = 20
   integer(c_int), parameter, public :: ITB_STATUS_BLOB_VERSION_TOO_NEW = 21
@@ -51,6 +54,9 @@ contains
     case (ITB_STATUS_SEED_WIDTH_MIX);       label = "seed width mismatch"
     case (ITB_STATUS_BAD_MAC);              label = "unknown MAC name or invalid MAC handle"
     case (ITB_STATUS_MAC_FAILURE);          label = "MAC verification failed"
+    case (ITB_STATUS_BLOB_MALFORMED_RECIPE); label = "blob recipe malformed"
+    case (ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN); label = "blob recipe names an unknown primitive"
+    case (ITB_STATUS_UNKNOWN_PROFILE);      label = "unknown profile name"
     case (ITB_STATUS_BLOB_MODE_MISMATCH);   label = "blob mode mismatch"
     case (ITB_STATUS_BLOB_MALFORMED);       label = "malformed state blob"
     case (ITB_STATUS_BLOB_VERSION_TOO_NEW); label = "blob version too new"

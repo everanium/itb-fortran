@@ -21,7 +21,7 @@ program test_into
 
   call itb_pipeline_init(sender, MSG_PROFILE, opts, err)
   call expect_ok(err, "init message")
-  call itb_pipeline_open(receiver, MSG_PROFILE, sender%blob, opts, err)
+  call load_from(sender, receiver, err)
   call expect_ok(err, "open message")
 
   call round_trip_message(65536)
@@ -33,7 +33,7 @@ program test_into
 
   call itb_pipeline_init(sender, STREAM_PROFILE, opts, err)
   call expect_ok(err, "init stream")
-  call itb_pipeline_open(receiver, STREAM_PROFILE, sender%blob, opts, err)
+  call load_from(sender, receiver, err)
   call expect_ok(err, "open stream")
 
   call round_trip_one_shot(65536)

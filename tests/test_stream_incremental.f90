@@ -18,7 +18,7 @@ program test_stream_incremental
   call itb_opts_set(opts, "chunkSize", "4096")
   call itb_pipeline_init(sender, PROFILE, opts, err)
   call expect_ok(err, "init")
-  call itb_pipeline_open(receiver, PROFILE, sender%blob, opts, err)
+  call load_from(sender, receiver, err)
   call expect_ok(err, "open")
 
   allocate (plain(PAYLOAD))

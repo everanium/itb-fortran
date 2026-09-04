@@ -30,7 +30,7 @@ program test_message
     profile = trim(profiles(p))
     call itb_pipeline_init(sender, profile, opts, err)
     call expect_ok(err, "init "//profile)
-    call itb_pipeline_open(receiver, profile, sender%blob, opts, err)
+    call load_from(sender, receiver, err)
     call expect_ok(err, "open "//profile)
 
     do s = 1, size(sizes)

@@ -11,7 +11,7 @@ module itb_test_helpers
   private
 
   public :: check, expect_ok, expect_status, check_bytes_equal, &
-            test_done, byte_of, fill_mod, fill_xorshift
+            test_done, byte_of, fill_mod, fill_xorshift, load_from
 
 contains
 
@@ -96,6 +96,19 @@ contains
     do i = 1, size(buf)
       buf(i) = byte_of(modulo(i - 1, m))
     end do
+  end subroutine
+
+  ! Save -> Load handshake: a receiver reconstructed from the
+  ! sender's current blob.
+  subroutine load_from(sender, receiver, err)
+    type(itb_pipeline_t), intent(in)  :: sender
+    type(itb_pipeline_t), intent(out) :: receiver
+    type(itb_error_t), intent(out)    :: err
+    integer(c_int8_t), allocatable :: blob(:)
+
+    call itb_pipeline_save(sender, blob, err)
+    if (.not. itb_ok(err)) return
+    call itb_pipeline_load(receiver, blob, err)
   end subroutine
 
   ! Deterministic non-trivial payload (xorshift64 fill).
