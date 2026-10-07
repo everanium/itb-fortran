@@ -1,4 +1,4 @@
-! itb_stream.f90 -- incremental stream sessions over an open Pipeline.
+! Incremental stream sessions over an open Pipeline.
 !
 ! A session is a dumb byte pump: an encrypt session takes plaintext
 ! in through itb_stream_write and yields wire through itb_stream_read

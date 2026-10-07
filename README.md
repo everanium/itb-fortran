@@ -14,7 +14,7 @@ MAC-name / cipher-name / profile-name is an opaque `character(*)`
 passed through to Go for validation; the binding carries no ITB
 construction logic. The public surface is one `itb_pipeline_t`
 handle (init / load / save / rekey / close / free, Single Message
-encrypt / decrypt, whole-buffer stream pumps, incremental
+encrypt / decrypt, one-shot and whole-buffer stream pumps, incremental
 `itb_stream_t` sessions with write / end / read), an `itb_opts_t`
 query-string builder for init overrides, the profile-record entries
 (`itb_register` / `itb_lookup` / `itb_profiles` / `itb_inspect`),
@@ -54,9 +54,9 @@ so `build.sh` runs `make clean` first.
 
 ## Module structure
 
-- `src/itb.f90` — root module; `use itb` re-exports the whole
+- `src/itb3.f90` — root module; `use itb3` re-exports the whole
   public surface (plus the interop kinds it uses).
-- `src/itb_status.f90` — status-code constants + labels.
+- `src/itb_status.f90` — status-code constants.
 - `src/itb_error.f90` — `itb_error_t` record + `ITB_LastError`
   capture.
 - `src/itb_opts.f90` — `itb_opts_t` URL-query builder (opaque
@@ -145,6 +145,20 @@ override pair on load: `call itb_pipeline_load(receiver, blob, err,
 perm_master=perm, wrap_master=wrap)` reopens the blob with fresh
 masters folded in.
 
+Bytes cross the surface as `integer(c_int8_t)` arrays; output arrays
+are allocated by the callee to the exact produced length. For
+bounded-Go-side-spooling streaming, `itb_encrypt_stream_pump` /
+`itb_decrypt_stream_pump` move a whole in-memory buffer through an
+incremental session in 1 MiB slices; the explicit session API
+(`itb_encrypt_stream_begin` / `itb_stream_write` / `itb_stream_end`
+/ `itb_stream_read` / `itb_stream_drain_all`) covers caller-driven
+loops over file or socket I/O.
+
+Profile names, opts keys, and every primitive name are validated by
+the Go side; a rejected string surfaces as an `itb_error_t` carrying
+the status code plus the `ITB_LastError` diagnostic
+(`itb_error_text(err)` renders both).
+
 ## Persisting sessions
 
 The blob returned by `itb_pipeline_save` is a self-describing session
@@ -174,12 +188,11 @@ library directly and register the same custom primitive under the
 same name before opening. Attempting to load such a blob through this
 binding surfaces `ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN`.
 
-**Runtime tuning.** The worker cap is per-machine and never travels
-in the blob; the receiver may pick its own after load:
-
-```fortran
-call itb_pipeline_max_workers(receiver, 4, err)   ! clamped by libitb3; <= 0 selects auto
-```
+**Runtime tuning.** `itb_pipeline_max_workers(receiver, n, err)` sets
+the worker cap for every subsequent cipher call (`n <= 0` selects
+auto, `n > 256` is clamped to 256); the receiver may pick its own
+worker cap after load — the cap is per-machine and never written to
+the blob.
 
 ## Profile registry
 
@@ -197,20 +210,6 @@ call itb_register("my-nomac-plain", &
 call itb_lookup("my-nomac-plain", record, err)   ! record with "name" filled in
 call itb_profiles(names, err)                    ! ["blob-triple-mac-v1", ...]
 ```
-
-Bytes cross the surface as `integer(c_int8_t)` arrays; output arrays
-are allocated by the callee to the exact produced length. For
-bounded-Go-side-spooling streaming, `itb_encrypt_stream_pump` /
-`itb_decrypt_stream_pump` move a whole in-memory buffer through an
-incremental session in 1 MiB slices; the explicit session API
-(`itb_encrypt_stream_begin` / `itb_stream_write` / `itb_stream_end`
-/ `itb_stream_read` / `itb_stream_drain_all`) covers caller-driven
-loops over file or socket I/O.
-
-Profile names, opts keys, and every primitive name are validated by
-the Go side; a rejected string surfaces as an `itb_error_t` carrying
-the status code plus the `ITB_LastError` diagnostic
-(`itb_error_text(err)` renders both).
 
 ## Memory
 
@@ -245,14 +244,17 @@ the shipped tree.
 ./bindings/fortran/run_bench.sh
 ```
 
-`bench_message` (Single Message encrypt) and `bench_stream`
-(stream-pump encrypt) throughput at 1 MiB / 16 MiB / 64 MiB.
+`bench_message` (Single Message encrypt), `bench_stream` (stream-pump
+encrypt) and `bench_stream_one_shot` (one-shot stream encrypt)
+throughput at 1 MiB / 16 MiB / 64 MiB.
 Wall-clock via `system_clock`; plaintext is CSPRNG-filled via
 `getrandom(2)` outside the timing loop. Shape env vars
 (`ITB_INNER_HASH`, `ITB_KEY_BITS`, `ITB_NONCE_BITS`,
 `ITB_WITH_PARALLAX`, `ITB_WITH_WRAPPER`, `ITB_PROFILE`,
 `ITB_BENCH_MIN_SEC`) default to the fleet-canonical pin inside
-`run_bench.sh`.
+`run_bench.sh`. See
+[`bindings/BENCH.md`](https://github.com/everanium/itb/blob/main/bindings/BENCH.md)
+for the fleet-wide configuration authority and comparison tables.
 
 ## itb3 CLI
 
@@ -264,6 +266,26 @@ decrypts payloads directly on disk (`-i` / `-o`) or through stdin /
 stdout, rotates outer masters, and inspects stored blobs. See
 [`cmd/itb3/README.md`](https://github.com/everanium/itb/blob/main/cmd/itb3/README.md) for the full
 subcommand reference.
+
+## loop utility
+
+A long-run stress harness under `bindings/fortran/loop/` holds one
+Pipeline handle for minutes, cycles encrypt → decrypt → compare
+round-trips through it, rotates the outer masters and reopens the
+handle from its session blob on a schedule, and reports whether the
+process survived with every byte intact. It is the binding-side
+counterpart of the Go harness under `tools/loop`: same flags, same
+round structure, same summary in both renderings.
+
+```bash
+cd bindings/fortran && ./build.sh
+./run_loop.sh --duration 2m --shape both
+```
+
+`./loop/loop -h` lists every flag. Concurrency mode:
+**shared-handle** — the OpenMP worker team's threads call into one
+Pipeline handle concurrently, which libitb3 permits once the handle
+is constructed, so `--goroutines` is the thread count verbatim.
 
 ## eitb utility
 

@@ -1,6 +1,6 @@
-! common.f90 -- shared timing + reporting helpers for the Fortran
-! binding micro-benchmarks. Wall-clock via system_clock (monotonic);
-! output is a fixed-width table:
+! Shared timing + reporting helpers for the Fortran binding
+! micro-benchmarks. Wall-clock via system_clock (monotonic); output
+! is a fixed-width table:
 !
 !   bench             size     mb_per_sec
 !   message           1 MiB    <n>

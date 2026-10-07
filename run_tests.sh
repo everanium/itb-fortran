@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run_tests.sh -- discover and run every tests/test_*.f90 binary.
+# Discover and run every tests/test_*.f90 binary.
 #
 # Each tests/test_*.f90 is compiled to its own standalone executable
 # under tests/build/ (see Makefile). The runner iterates the binaries,

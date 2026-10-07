@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the ITB Fortran binding.
+# One-step build for the ITB Fortran binding.
 #
 # Ensures the libitb3.so c-shared artefact exists at
 # dist/linux-amd64/libitb3.so (rebuilds it if absent), then dispatches
@@ -38,6 +38,8 @@ CLEAN_TARGETS=(
     bench/results         # bench output
     eitb/build            # eitb objects
     eitb/eitb             # eitb CLI
+    loop/build            # loop harness objects
+    loop/loop             # loop stress harness
     coverage              # gcov report tree
 )
 CLEAN_GLOBS=(
@@ -97,6 +99,6 @@ if [ ! -f "$REPO_ROOT/dist/linux-amd64/libitb3.so" ]; then
 fi
 
 echo "==> building Fortran binding (FC=${FC:-gfortran})"
-make tests bench eitb
+make tests bench eitb loop
 
 echo "==> ready: ./run_tests.sh"

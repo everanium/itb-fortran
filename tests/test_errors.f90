@@ -13,11 +13,11 @@ program test_errors
       '"chacha20","blake3","blake2s","areion256"],' // &
       '"keybits":1024,"wrapper":false,"parallax":false}'
 
-  type(itb_opts_t)     :: empty, bad_key, neg, bad_hash
+  type(itb_opts_t)     :: empty, bad_key, neg, bad_hash, bad_drbg
   type(itb_pipeline_t) :: pipe, sender, receiver
   type(itb_error_t)    :: err
   integer(c_int8_t), allocatable :: plain(:), wire(:), back(:), blob(:)
-  character(:), allocatable :: version, json
+  character(:), allocatable :: version, json, tier
   integer :: i
 
   ! Unknown profile is UnknownProfile with a non-empty diagnostic, on
@@ -101,10 +101,23 @@ program test_errors
   call itb_pipeline_init(pipe, "singlemsg-triple-mac-v1", bad_hash, err)
   call check(err%status /= ITB_STATUS_OK, "opaque name relay rejected")
 
+  ! An unknown drbg name is relayed to Go and rejected there as
+  ! RECIPE_PRIMITIVE_UNKNOWN, with the token in the diagnostic.
+  call itb_opts_set(bad_drbg, "drbg", "nope")
+  call itb_pipeline_init(pipe, "singlemsg-triple-mac-v1", bad_drbg, err)
+  call expect_status(err, ITB_STATUS_RECIPE_PRIMITIVE_UNKNOWN, "unknown drbg")
+  call check(index(err%message, "nope") > 0, "diagnostic names the drbg token")
+
   ! Runtime accessors respond.
   call itb_version(version, err)
   call expect_ok(err, "version")
   call check(len(version) > 0, "version non-empty")
+
+  ! Auto DRBG tier: one of the two fill ciphers, resolved per host.
+  call itb_drbg_auto_tier(tier, err)
+  call expect_ok(err, "drbg auto tier")
+  call check(tier == "aes-256-ctr" .or. tier == "chacha20", &
+             "drbg auto tier: "//tier)
 
   call test_done("test_errors")
 end program

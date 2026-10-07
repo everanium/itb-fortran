@@ -1,4 +1,4 @@
-! itb_opts.f90 -- URL-query builder for the opts pass-through string.
+! URL-query builder for the opts pass-through string.
 !
 ! The builder performs no validation: every key and value is rendered
 ! into a percent-encoded query string and passed through to Go

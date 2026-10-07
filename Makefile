@@ -1,5 +1,5 @@
-# Makefile -- build the ITB Fortran binding sources, test programs,
-# bench binaries, and the eitb CLI.
+# Build the ITB Fortran binding sources, test programs, bench
+# binaries, and the eitb CLI.
 #
 # Targets:
 #   all (default): compile every src/*.f90 module into build/.
@@ -10,6 +10,7 @@
 #   bench:         compile bench/bench_{message,stream,stream_one_shot}.f90
 #                  into bench/bin/.
 #   eitb:          compile the eitb CLI at eitb/eitb.
+#   loop:          compile the loop stress harness at loop/loop.
 #   clean:         remove every generated artefact.
 #   help:          list targets.
 #
@@ -40,13 +41,33 @@ TESTS_BUILD = tests/build
 BENCH_BUILD = bench/build
 BENCH_BIN   = bench/bin
 EITB_BUILD  = eitb/build
+LOOP_BUILD  = loop/build
+
+# The loop harness is the one target that needs threads and modular
+# integer arithmetic: Fortran 2008 offers neither, so OpenMP supplies
+# the worker team and -fwrapv makes the wraparound its seeded
+# generator depends on well defined under -O3. Neither flag reaches
+# the binding sources, the tests, the benches or eitb.
+LOOP_FCFLAGS = $(FCFLAGS) -fopenmp -fwrapv
+
+# Compile order of the harness units: size / state -> payload / ops
+# -> worker -> summary -> main.
+LOOP_MODS = \
+    loop/loop_size.f90    \
+    loop/loop_state.f90   \
+    loop/loop_payload.f90 \
+    loop/loop_ops.f90     \
+    loop/loop_worker.f90  \
+    loop/loop_summary.f90
+
+LOOP_OBJS = $(patsubst loop/%.f90,$(LOOP_BUILD)/%.o,$(LOOP_MODS))
 
 RPATH   = $(abspath $(LIBITB3_DIR))
 LDFLAGS = -L$(LIBITB3_DIR) -litb3 -Wl,-rpath,$(RPATH)
 
 # Source-side declaration order. Module dependencies are linear:
 # status / ffi / opts -> error -> runtime -> pipeline -> stream ->
-# itb (root re-export). The list is in compile order so every
+# itb3 (root re-export). The list is in compile order so every
 # dependent module has its prerequisite .mod already on disk when
 # the compiler reaches it.
 SRC_FILES = \
@@ -67,13 +88,14 @@ TEST_BINS = $(patsubst tests/test_%.f90,$(TESTS_BUILD)/test_%,$(TEST_SRCS))
 HELPER_SRC = tests/itb_test_helpers.f90
 HELPER_OBJ = $(TESTS_BUILD)/itb_test_helpers.o
 
-.PHONY: all src tests bench eitb clean help
+.PHONY: all src tests bench eitb loop clean help
 all: src
 src: $(SRC_OBJS)
 tests: src $(HELPER_OBJ) $(TEST_BINS)
 bench: src $(BENCH_BIN)/bench_message $(BENCH_BIN)/bench_stream \
        $(BENCH_BIN)/bench_stream_one_shot
 eitb: src eitb/eitb
+loop: src loop/loop
 
 # Pattern rule: src/%.f90 -> build/%.o + build/%.mod. Module files
 # land alongside the object files in $(BUILD_DIR).
@@ -86,7 +108,7 @@ $(BUILD_DIR)/itb_error.o:    $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o
 $(BUILD_DIR)/itb_runtime.o:  $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o $(BUILD_DIR)/itb_error.o
 $(BUILD_DIR)/itb_pipeline.o: $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_opts.o
 $(BUILD_DIR)/itb_stream.o:   $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_ffi.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_pipeline.o
-$(BUILD_DIR)/itb.o:          $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_opts.o $(BUILD_DIR)/itb_runtime.o $(BUILD_DIR)/itb_pipeline.o $(BUILD_DIR)/itb_stream.o
+$(BUILD_DIR)/itb3.o:         $(BUILD_DIR)/itb_status.o $(BUILD_DIR)/itb_error.o $(BUILD_DIR)/itb_opts.o $(BUILD_DIR)/itb_runtime.o $(BUILD_DIR)/itb_pipeline.o $(BUILD_DIR)/itb_stream.o
 
 # Test helper module compiles into tests/build/.
 $(HELPER_OBJ): $(HELPER_SRC) $(SRC_OBJS) | $(TESTS_BUILD)
@@ -114,6 +136,22 @@ eitb/eitb: eitb/eitb.f90 $(SRC_OBJS) | $(EITB_BUILD)
 	$(FC) $(FCFLAGS) -J $(EITB_BUILD) -I$(BUILD_DIR) \
 	      $< $(SRC_OBJS) -o $@ $(LDFLAGS)
 
+# ----- loop stress harness --------------------------------------------
+
+$(LOOP_BUILD)/%.o: loop/%.f90 $(SRC_OBJS) | $(LOOP_BUILD)
+	$(FC) $(LOOP_FCFLAGS) -J $(LOOP_BUILD) -I$(BUILD_DIR) \
+	      -I$(LOOP_BUILD) -c $< -o $@
+
+$(LOOP_BUILD)/loop_state.o:   $(LOOP_BUILD)/loop_size.o
+$(LOOP_BUILD)/loop_payload.o: $(LOOP_BUILD)/loop_state.o
+$(LOOP_BUILD)/loop_ops.o:     $(LOOP_BUILD)/loop_payload.o
+$(LOOP_BUILD)/loop_worker.o:  $(LOOP_BUILD)/loop_ops.o
+$(LOOP_BUILD)/loop_summary.o: $(LOOP_BUILD)/loop_worker.o
+
+loop/loop: loop/loop_main.f90 $(LOOP_OBJS) $(SRC_OBJS) | $(LOOP_BUILD)
+	$(FC) $(LOOP_FCFLAGS) -J $(LOOP_BUILD) -I$(BUILD_DIR) -I$(LOOP_BUILD) \
+	      $< $(LOOP_OBJS) $(SRC_OBJS) -o $@ $(LDFLAGS)
+
 # ----- Directory stamps -----------------------------------------------
 
 $(BUILD_DIR):
@@ -131,8 +169,12 @@ $(BENCH_BIN):
 $(EITB_BUILD):
 	mkdir -p $(EITB_BUILD)
 
+$(LOOP_BUILD):
+	mkdir -p $(LOOP_BUILD)
+
 clean:
-	rm -rf $(BUILD_DIR) tests/build bench/build bench/bin eitb/build eitb/eitb
+	rm -rf $(BUILD_DIR) tests/build bench/build bench/bin eitb/build eitb/eitb \
+	       loop/build loop/loop
 
 help:
 	@echo "Targets:"
@@ -141,6 +183,7 @@ help:
 	@echo "  tests         -- src + every tests/test_*.f90 binary."
 	@echo "  bench         -- src + bench/bin/bench_{message,stream,stream_one_shot}."
 	@echo "  eitb          -- src + the eitb CLI at eitb/eitb."
+	@echo "  loop          -- src + the loop stress harness at loop/loop."
 	@echo "  clean         -- remove every generated artefact."
 	@echo ""
 	@echo "Variables (override via FC=... etc):"

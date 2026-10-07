@@ -1,7 +1,7 @@
-! itb_test_helpers.f90 -- shared assertion module for the test
-! programs. Each tests/test_*.f90 is a standalone program; on any
-! failed assertion the process prints a diagnostic and exits with a
-! non-zero status (run_tests.sh counts per-binary pass / fail).
+! Shared assertion module for the test programs. Each
+! tests/test_*.f90 is a standalone program; on any failed assertion
+! the process prints a diagnostic and exits with a non-zero status
+! (run_tests.sh counts per-binary pass / fail).
 
 module itb_test_helpers
   use, intrinsic :: iso_c_binding, only: c_int, c_int8_t

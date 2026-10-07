@@ -110,6 +110,7 @@ program test_persist
   call round_trip("workers")
   call itb_pipeline_free(receiver)
   call itb_pipeline_free(sender)
+  call drbg_cases()
   call test_done("test_persist")
 
 contains
@@ -121,6 +122,78 @@ contains
     call itb_decrypt_message(receiver, wire, back, err)
     call expect_ok(err, label//" decrypt")
     call check_bytes_equal(back, plain, label//" round trip")
+  end subroutine
+
+  ! The drbg recipe key: an init under each named fill primitive
+  ! round-trips through a loaded blob and is reported by inspect; the
+  ! default leaves the key out of inspect and lookup; an inspected
+  ! record re-registers under a new name and keeps the key. The
+  ! register payload drops the name and the inspection-only
+  ! nonce_bits / barrier_fill / container_mode keys, which sit
+  ! contiguously between keybits and drbg.
+  subroutine drbg_cases()
+    character(len=9), parameter :: drbg_names(2) = [character(len=9) :: &
+        "csprng", "aesitb128"]
+    type(itb_opts_t)     :: dopts, none
+    type(itb_pipeline_t) :: dsend, drecv
+    integer(c_int8_t), allocatable :: dblob(:), dwire(:), dback(:)
+    character(:), allocatable :: djson, dlooked, payload
+    integer :: k, p_mode, p_cut, p_drbg
+
+    do k = 1, size(drbg_names)
+      dopts = itb_opts_t()
+      call itb_opts_set(dopts, "drbg", trim(drbg_names(k)))
+      call itb_pipeline_init(dsend, "singlemsg-triple-mac-v1", dopts, err)
+      call expect_ok(err, "init drbg="//trim(drbg_names(k)))
+      call itb_pipeline_save(dsend, dblob, err)
+      call expect_ok(err, "save drbg")
+      call itb_pipeline_load(drecv, dblob, err)
+      call expect_ok(err, "load drbg")
+      call itb_encrypt_message(dsend, plain, dwire, err)
+      call expect_ok(err, "drbg encrypt")
+      call itb_decrypt_message(drecv, dwire, dback, err)
+      call expect_ok(err, "drbg decrypt")
+      call check_bytes_equal(dback, plain, "drbg round trip")
+      call itb_encrypt_message(drecv, plain, dwire, err)
+      call expect_ok(err, "drbg reverse encrypt")
+      call itb_decrypt_message(dsend, dwire, dback, err)
+      call expect_ok(err, "drbg reverse decrypt")
+      call check_bytes_equal(dback, plain, "drbg reverse round trip")
+
+      call itb_inspect(dblob, djson, err)
+      call expect_ok(err, "inspect drbg")
+      call check(index(djson, '"drbg":"'//trim(drbg_names(k))//'"') > 0, &
+          "inspect carries the drbg key")
+
+      if (trim(drbg_names(k)) == "csprng") then
+        p_mode = index(djson, '"mode"')
+        p_cut = index(djson, '"nonce_bits"')
+        p_drbg = index(djson, '"drbg"')
+        call check(p_mode > 0 .and. p_cut > p_mode .and. p_drbg > p_cut, &
+            "inspect key order for the register payload")
+        payload = "{"//djson(p_mode:p_cut - 1)//djson(p_drbg:)
+        call itb_register("fortran-binding-test-drbg-copy", payload, err)
+        call expect_ok(err, "register drbg copy")
+        call itb_lookup("fortran-binding-test-drbg-copy", dlooked, err)
+        call expect_ok(err, "lookup drbg copy")
+        call check(index(dlooked, '"drbg":"csprng"') > 0, &
+            "lookup keeps the drbg key")
+      end if
+      call itb_pipeline_free(drecv)
+      call itb_pipeline_free(dsend)
+    end do
+
+    call itb_pipeline_init(dsend, "singlemsg-triple-mac-v1", none, err)
+    call expect_ok(err, "init default drbg")
+    call itb_pipeline_save(dsend, dblob, err)
+    call expect_ok(err, "save default drbg")
+    call itb_inspect(dblob, djson, err)
+    call expect_ok(err, "inspect default drbg")
+    call check(index(djson, '"drbg"') == 0, "default inspect omits drbg")
+    call itb_lookup("singlemsg-triple-mac-v1", dlooked, err)
+    call expect_ok(err, "lookup shipped")
+    call check(index(dlooked, '"drbg"') == 0, "shipped lookup omits drbg")
+    call itb_pipeline_free(dsend)
   end subroutine
 
 end program

@@ -1,5 +1,5 @@
 ! Coverage for the reusable-buffer *_into cipher entries: wire
-! compatibility with the legacy exact-size paths (both directions,
+! compatibility with the exact-size paths (both directions,
 ! all three surfaces), cross-call buffer reuse with dirty tails, and
 ! caller-pre-allocated oversized scratch.
 
@@ -48,11 +48,11 @@ program test_into
 
 contains
 
-  ! encrypt_message_into wire decrypts through the legacy path, and
-  ! legacy wire decrypts through decrypt_message_into.
+  ! Cross-parity: a wire produced by an *_into entry decrypts through
+  ! the allocating entry and vice versa.
   subroutine round_trip_message(n)
     integer, intent(in) :: n
-    integer(c_int8_t), allocatable         :: plain(:), legacy_wire(:), back(:)
+    integer(c_int8_t), allocatable         :: plain(:), alloc_wire(:), back(:)
     integer(c_int8_t), allocatable, target :: wire_s(:), back_s(:)
     integer(c_size_t) :: n_wire, n_back
 
@@ -63,21 +63,21 @@ contains
     call expect_ok(err, "message: encrypt _into")
     call check(n_wire > 0_c_size_t, "message: n_wire positive")
     call itb_decrypt_message(receiver, wire_s(1:n_wire), back, err)
-    call expect_ok(err, "message: legacy decrypt of _into wire")
+    call expect_ok(err, "message: allocating decrypt of _into wire")
     call check_bytes_equal(back, plain, "message: _into wire round trip")
 
-    call itb_encrypt_message(sender, plain, legacy_wire, err)
-    call expect_ok(err, "message: legacy encrypt")
-    call itb_decrypt_message_into(receiver, legacy_wire, back_s, n_back, err)
-    call expect_ok(err, "message: decrypt _into of legacy wire")
+    call itb_encrypt_message(sender, plain, alloc_wire, err)
+    call expect_ok(err, "message: allocating encrypt")
+    call itb_decrypt_message_into(receiver, alloc_wire, back_s, n_back, err)
+    call expect_ok(err, "message: decrypt _into of allocating wire")
     call check_bytes_equal(back_s(1:n_back), plain, &
-        "message: legacy wire _into round trip")
+        "message: allocating wire _into round trip")
   end subroutine
 
   ! Same cross-compatibility pattern on the one-shot stream surface.
   subroutine round_trip_one_shot(n)
     integer, intent(in) :: n
-    integer(c_int8_t), allocatable         :: plain(:), legacy_wire(:), back(:)
+    integer(c_int8_t), allocatable         :: plain(:), alloc_wire(:), back(:)
     integer(c_int8_t), allocatable, target :: wire_s(:), back_s(:)
     integer(c_size_t) :: n_wire, n_back
 
@@ -88,22 +88,22 @@ contains
     call expect_ok(err, "one-shot: encrypt _into")
     call check(n_wire > 0_c_size_t, "one-shot: n_wire positive")
     call itb_decrypt_stream_one_shot(receiver, wire_s(1:n_wire), back, err)
-    call expect_ok(err, "one-shot: legacy decrypt of _into wire")
+    call expect_ok(err, "one-shot: allocating decrypt of _into wire")
     call check_bytes_equal(back, plain, "one-shot: _into wire round trip")
 
-    call itb_encrypt_stream_one_shot(sender, plain, legacy_wire, err)
-    call expect_ok(err, "one-shot: legacy encrypt")
-    call itb_decrypt_stream_one_shot_into(receiver, legacy_wire, back_s, &
+    call itb_encrypt_stream_one_shot(sender, plain, alloc_wire, err)
+    call expect_ok(err, "one-shot: allocating encrypt")
+    call itb_decrypt_stream_one_shot_into(receiver, alloc_wire, back_s, &
         n_back, err)
-    call expect_ok(err, "one-shot: decrypt _into of legacy wire")
+    call expect_ok(err, "one-shot: decrypt _into of allocating wire")
     call check_bytes_equal(back_s(1:n_back), plain, &
-        "one-shot: legacy wire _into round trip")
+        "one-shot: allocating wire _into round trip")
   end subroutine
 
   ! Same cross-compatibility pattern on the whole-buffer pump surface.
   subroutine round_trip_pump(n)
     integer, intent(in) :: n
-    integer(c_int8_t), allocatable         :: plain(:), legacy_wire(:), back(:)
+    integer(c_int8_t), allocatable         :: plain(:), alloc_wire(:), back(:)
     integer(c_int8_t), allocatable, target :: wire_s(:), back_s(:)
     integer(c_size_t) :: n_wire, n_back
 
@@ -114,16 +114,16 @@ contains
     call expect_ok(err, "pump: encrypt _into")
     call check(n_wire > 0_c_size_t, "pump: n_wire positive")
     call itb_decrypt_stream_pump(receiver, wire_s(1:n_wire), back, err)
-    call expect_ok(err, "pump: legacy decrypt of _into wire")
+    call expect_ok(err, "pump: allocating decrypt of _into wire")
     call check_bytes_equal(back, plain, "pump: _into wire round trip")
 
-    call itb_encrypt_stream_pump(sender, plain, legacy_wire, err)
-    call expect_ok(err, "pump: legacy encrypt")
-    call itb_decrypt_stream_pump_into(receiver, legacy_wire, back_s, &
+    call itb_encrypt_stream_pump(sender, plain, alloc_wire, err)
+    call expect_ok(err, "pump: allocating encrypt")
+    call itb_decrypt_stream_pump_into(receiver, alloc_wire, back_s, &
         n_back, err)
-    call expect_ok(err, "pump: decrypt _into of legacy wire")
+    call expect_ok(err, "pump: decrypt _into of allocating wire")
     call check_bytes_equal(back_s(1:n_back), plain, &
-        "pump: legacy wire _into round trip")
+        "pump: allocating wire _into round trip")
   end subroutine
 
   ! ---- Case class 2: cross-call buffer reuse ------------------------

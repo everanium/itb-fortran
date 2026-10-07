@@ -1,4 +1,4 @@
-! itb_pipeline.f90 -- the Triple Pipeline handle wrapper.
+! The Triple Pipeline handle wrapper.
 !
 ! One itb_pipeline_t replaces the 8-seed + parallax + wrapper +
 ! MAC ceremony of the low-level path. The Pipeline is initialised
@@ -36,6 +36,7 @@ module itb_pipeline
   public :: itb_encrypt_message_into, itb_decrypt_message_into
   public :: itb_encrypt_stream_one_shot_into, itb_decrypt_stream_one_shot_into
   public :: itb_inspect, itb_register, itb_lookup, itb_profiles
+  public :: itb_hash_names
 
   type :: itb_pipeline_t
     integer(c_intptr_t) :: handle = 0_c_intptr_t
@@ -52,6 +53,7 @@ module itb_pipeline
   integer, parameter :: BUF_INSPECT  = 4
   integer, parameter :: BUF_LOOKUP   = 5
   integer, parameter :: BUF_PROFILES = 6
+  integer, parameter :: BUF_HASHNAMES = 7
 
   ! Cipher-path selectors for the shared dispatch body.
   integer, parameter :: OP_ENCRYPT_MESSAGE = 1
@@ -390,6 +392,19 @@ contains
     call bytes_to_string(raw, json)
   end subroutine
 
+  ! The shipped hash-primitive registry in canonical order, as a JSON
+  ! array of strings. The registry is the authority on which names
+  ! itb_pipeline_init accepts for the "innerHash" opts key.
+  subroutine itb_hash_names(json, err)
+    character(:), allocatable, intent(out) :: json
+    type(itb_error_t), intent(out)         :: err
+    integer(c_int8_t), allocatable :: raw(:)
+
+    call buffer_call(BUF_HASHNAMES, raw, err)
+    if (.not. itb_ok(err)) return
+    call bytes_to_string(raw, json)
+  end subroutine
+
   ! Byte-for-byte copy of a libitb3 JSON output into a Fortran string.
   subroutine bytes_to_string(raw, s)
     integer(c_int8_t), intent(in)          :: raw(:)
@@ -484,6 +499,8 @@ contains
       rc = c_itb_triple_lookup(p1, out_p, out_cap, out_len)
     case (BUF_PROFILES)
       rc = c_itb_triple_profiles(out_p, out_cap, out_len)
+    case (BUF_HASHNAMES)
+      rc = c_itb_triple_hash_names(out_p, out_cap, out_len)
     case default
       rc = ITB_STATUS_INTERNAL
     end select

@@ -1,4 +1,4 @@
-! itb_error.f90 -- error record carried by every fallible binding call.
+! Error record carried by every fallible binding call.
 !
 ! Each public subroutine takes a trailing `type(itb_error_t),
 ! intent(out) :: err` argument. On success `err%status` is
@@ -56,17 +56,17 @@ contains
     end if
   end subroutine
 
-  ! "status <n> (<label>): <diagnostic>" -- one-line rendering for
-  ! logs and test failure messages.
+  ! "status <n>: <diagnostic>" -- one-line rendering for logs and
+  ! test failure messages.
   function itb_error_text(err) result(txt)
     type(itb_error_t), intent(in) :: err
     character(:), allocatable     :: txt
     character(len=12) :: code
 
     write (code, '(i0)') err%status
-    txt = "status "//trim(code)//" ("//itb_status_label(err%status)//")"
+    txt = "status "//trim(code)//":"
     if (allocated(err%message)) then
-      if (len(err%message) > 0) txt = txt//": "//err%message
+      if (len(err%message) > 0) txt = txt//" "//err%message
     end if
   end function
 
@@ -78,13 +78,27 @@ contains
 
     n = 0_c_size_t
     rc = c_itb_last_error(c_loc(buf(1)), int(size(buf), c_size_t), n)
-    if (rc /= ITB_STATUS_OK) then
-      ! Diagnostic longer than the local buffer (or unreadable) --
-      ! keep the status code, drop the text.
-      msg = ""
+    if (rc == ITB_STATUS_OK) then
+      call itb_from_cstr(buf, n, msg)
       return
     end if
-    call itb_from_cstr(buf, n, msg)
+    ! The diagnostic is the only text an error carries, so losing it to
+    ! a short buffer would leave the caller holding a bare number. The
+    ! library reports the size it needed, so ask again at that size.
+    if (rc == ITB_STATUS_BUFFER_TOO_SMALL .and. n > 1_c_size_t) then
+      block
+        character(kind=c_char), allocatable, target :: wide(:)
+        integer(c_size_t) :: wrote
+        allocate (wide(n))
+        wrote = 0_c_size_t
+        rc = c_itb_last_error(c_loc(wide(1)), int(size(wide), c_size_t), wrote)
+        if (rc == ITB_STATUS_OK) then
+          call itb_from_cstr(wide, wrote, msg)
+          return
+        end if
+      end block
+    end if
+    msg = ""
   end subroutine
 
 end module itb_error

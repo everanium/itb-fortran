@@ -1,4 +1,4 @@
-! itb.f90 -- root module of the ITB Fortran binding: a thin proxy over
+! Root module of the ITB Fortran binding: a thin proxy over
 ! the libitb3 shared library's Triple Pipeline surface (ITB_Triple_*).
 !
 ! `use itb3` re-exports the whole public surface:

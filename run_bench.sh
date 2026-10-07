@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_bench.sh -- micro-benchmark runner for the Fortran binding.
-# Builds the bench binaries if absent, then runs bench_message,
-# bench_stream, and bench_stream_one_shot: Single Message encrypt,
-# stream-pump encrypt, and whole-buffer stream one-shot encrypt
-# throughput at 1 MiB / 16 MiB / 64 MiB.
+# Micro-benchmark runner for the Fortran binding. Builds the bench
+# binaries if absent, then runs bench_message, bench_stream, and
+# bench_stream_one_shot: Single Message encrypt, stream-pump
+# encrypt, and whole-buffer stream one-shot encrypt throughput at
+# 1 MiB / 16 MiB / 64 MiB.
 #
 # Usage:
 #   ./run_bench.sh

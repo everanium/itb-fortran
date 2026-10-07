@@ -1,7 +1,7 @@
-! itb_ffi.f90 -- raw bind(C) interface declarations for the
-! ITB_Triple_* surface of libitb3.so, plus the introspection / runtime
-! entry points the binding consumes, plus the C-string marshalling
-! helpers shared by every higher-level module.
+! Raw bind(C) interface declarations for the ITB_Triple_* surface of
+! libitb3.so, plus the introspection / runtime entry points the
+! binding consumes, plus the C-string marshalling helpers shared by
+! every higher-level module.
 !
 ! Conventions (matching libitb3.h):
 !
@@ -16,7 +16,7 @@
 !
 ! This module is internal plumbing: the public binding surface lives
 ! in itb_pipeline / itb_stream / itb_runtime / itb_opts / itb_error,
-! re-exported by the root module itb.
+! re-exported by the root module itb3.
 
 module itb_ffi
   use, intrinsic :: iso_c_binding
@@ -29,6 +29,15 @@ module itb_ffi
 
     function c_itb_version(out, cap_bytes, out_len) &
         bind(C, name="ITB_Version") result(rc)
+      import
+      type(c_ptr), value       :: out
+      integer(c_size_t), value :: cap_bytes
+      integer(c_size_t)        :: out_len
+      integer(c_int)           :: rc
+    end function
+
+    function c_itb_drbg_auto_tier(out, cap_bytes, out_len) &
+        bind(C, name="ITB_DRBGAutoTier") result(rc)
       import
       type(c_ptr), value       :: out
       integer(c_size_t), value :: cap_bytes
@@ -295,6 +304,51 @@ module itb_ffi
       import
       integer(c_intptr_t), value :: stream
       integer(c_int)             :: rc
+    end function
+
+    ! ---- hash registry + remaining runtime knobs -------------------
+    !
+    ! ITB_Triple_HashNames follows the caller-allocated-buffer
+    ! convention of the other JSON entries; ITB_PoolStats follows it
+    ! over a vector of int64 counters, counted in elements rather
+    ! than bytes.
+
+    function c_itb_triple_hash_names(json_out, json_cap, json_len) &
+        bind(C, name="ITB_Triple_HashNames") result(rc)
+      import
+      type(c_ptr), value       :: json_out
+      integer(c_size_t), value :: json_cap
+      integer(c_size_t)        :: json_len
+      integer(c_int)           :: rc
+    end function
+
+    function c_itb_set_gomaxprocs(n) &
+        bind(C, name="ITB_SetGOMAXPROCS") result(prev)
+      import
+      integer(c_int), value :: n
+      integer(c_int)        :: prev
+    end function
+
+    function c_itb_write_heap_profile(path) &
+        bind(C, name="ITB_WriteHeapProfile") result(rc)
+      import
+      type(c_ptr), value :: path
+      integer(c_int)     :: rc
+    end function
+
+    function c_itb_pool_stats_len() &
+        bind(C, name="ITB_PoolStatsLen") result(n)
+      import
+      integer(c_int) :: n
+    end function
+
+    function c_itb_pool_stats(out, cap_elems, len_elems) &
+        bind(C, name="ITB_PoolStats") result(rc)
+      import
+      type(c_ptr), value       :: out
+      integer(c_size_t), value :: cap_elems
+      integer(c_size_t)        :: len_elems
+      integer(c_int)           :: rc
     end function
 
   end interface

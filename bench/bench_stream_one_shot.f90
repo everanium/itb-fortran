@@ -1,4 +1,4 @@
-! Stream one-shot encrypt throughput vs plaintext size at
+! One-shot stream encrypt throughput vs plaintext size at
 ! 1 MiB / 16 MiB / 64 MiB. Times the whole-buffer path (a single FFI
 ! round trip through the Pipeline's stream chain).
 
@@ -24,9 +24,9 @@ program bench_stream_one_shot
   integer(c_int)     :: prev_gc
   integer :: i
 
-  ! Bench-scale allocation churn leaks Go scratch heap unboundedly
-  ! without a soft memory cap + aggressive GC; the return values
-  ! report the previous settings, not an error.
+  ! Bench-scale allocation churn grows the Go scratch heap
+  ! unboundedly without a soft memory cap + aggressive GC; the
+  ! return values report the previous settings, not an error.
   prev_limit = itb_set_memory_limit(int(4, c_int64_t) * 1024 * 1024 * 1024)
   prev_gc = itb_set_gc_percent(100_c_int)
 
