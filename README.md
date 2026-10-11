@@ -120,6 +120,7 @@ value)`. The resolved shape travels inside the blob, so the receiver
 needs no options of its own:
 
 ```fortran
+call itb_opts_set(opts, "mode", "2")
 call itb_opts_set(opts, "chunkSize", "65536")
 call itb_opts_set(opts, "withWrapper", "false")
 call itb_opts_set(opts, "maxWorkers", "4")

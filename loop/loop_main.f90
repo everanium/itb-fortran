@@ -949,49 +949,6 @@ contains
   ! digit wide, so the blob length does not change and the key
   ! material in blob is never copied. Returns false when the inner
   ! blob or its mode field is not found.
-  function edit_inner_blob_mode(blob, target) result(ok)
-    integer(c_int8_t), intent(inout) :: blob(:)
-    integer, intent(in)              :: target
-    logical                          :: ok
-    character(*), parameter :: IB_KEY = '"ib":{'
-    character(*), parameter :: MODE_KEY = '"mode":'
-    integer :: ib, mode, at
-
-    ok = .false.
-    ib = find_bytes(blob, 1, IB_KEY)
-    if (ib == 0) return
-    mode = find_bytes(blob, ib + len(IB_KEY), MODE_KEY)
-    if (mode == 0) return
-    at = mode + len(MODE_KEY)
-    if (at + 1 > size(blob)) return
-    if (blob(at) < ichar('1') .or. blob(at) > ichar('2')) return
-    if (blob(at + 1) >= ichar('0') .and. blob(at + 1) <= ichar('9')) return
-    blob(at) = int(ichar('0') + target, c_int8_t)
-    ok = .true.
-  end function
-
-  ! Index of the first occurrence of needle in blob at or after from,
-  ! or zero when absent. The blob is JSON text held as bytes, so the
-  ! search compares byte by byte rather than through a string copy.
-  function find_bytes(blob, from, needle) result(at)
-    integer(c_int8_t), intent(in) :: blob(:)
-    integer, intent(in)           :: from
-    character(*), intent(in)      :: needle
-    integer                       :: at
-    integer :: i, j
-
-    at = 0
-    do i = from, size(blob) - len(needle) + 1
-      do j = 1, len(needle)
-        if (blob(i + j - 1) /= ichar(needle(j:j))) exit
-      end do
-      if (j > len(needle)) then
-        at = i
-        return
-      end if
-    end do
-  end function
-
   ! Folds a keystream primitive into opts for any layer the named
   ! profile leaves unfilled but the operator asked for.
   !
@@ -1060,6 +1017,9 @@ contains
     integer           :: filled
 
     active = .false.
+    if (cfg%blob_mode /= 1) then
+      call itb_opts_set(opts, "mode", itoa(int(cfg%blob_mode, c_int64_t)))
+    end if
     call itb_opts_set(opts, "innerHash", cfg%hash)
     call itb_opts_set(opts, "macName", cfg%mac)
     call itb_opts_set(opts, "withParallax", truth(cfg%parallax))
@@ -1090,22 +1050,6 @@ contains
       call err_line("Save("//profile//"): "//itb_error_text(ierr))
       call itb_pipeline_free(pipe)
       return
-    end if
-    if (cfg%blob_mode == 2) then
-      ! The sizing mode is not an Opts knob: the Init blob is edited
-      ! and the Pipeline reopened from it, so the retained blob (the
-      ! one blob-cycle reopens from) carries the edited mode.
-      if (.not. edit_inner_blob_mode(blob, 2)) then
-        call err_line("rewrite blob mode: inner blob mode field not found")
-        call itb_pipeline_free(pipe)
-        return
-      end if
-      call itb_pipeline_free(pipe)
-      call itb_pipeline_load(pipe, blob, ierr)
-      if (.not. itb_ok(ierr)) then
-        call err_line("reload Mode 2 blob: "//itb_error_text(ierr))
-        return
-      end if
     end if
     call log_pipeline_initialised(profile, blob)
     active = .true.

@@ -6,12 +6,13 @@ program test_persist
   use itb_test_helpers
   implicit none
 
-  type(itb_opts_t)     :: opts
-  type(itb_pipeline_t) :: sender, receiver
+  type(itb_opts_t)     :: opts, m2_opts
+  type(itb_pipeline_t) :: sender, receiver, m2_sender
   type(itb_error_t)    :: err
   integer(c_int8_t), allocatable :: blob(:), again(:), plain(:), wire(:), back(:)
+  integer(c_int8_t), allocatable :: m2_blob(:)
   integer(c_int8_t) :: perm(32), wrap(32)
-  character(:), allocatable :: inspected, looked, names
+  character(:), allocatable :: inspected, looked, names, m2_inspected
   character(len=64) :: path
   integer :: i, unit, stat
 
@@ -68,6 +69,19 @@ program test_persist
       "inspect carries the inspection-only nonce_bits field")
   call check(index(inspected, '"barrier_fill":') > 0, &
       "inspect carries the inspection-only barrier_fill field")
+  call check(index(inspected, '"container_mode":1') > 0, &
+      "inspect carries container_mode=1 by default")
+
+  call itb_opts_set(m2_opts, "mode", "2")
+  call itb_pipeline_init(m2_sender, "singlemsg-triple-mac-v1", m2_opts, err)
+  call expect_ok(err, "init mode=2")
+  call itb_pipeline_save(m2_sender, m2_blob, err)
+  call expect_ok(err, "save mode=2")
+  call itb_inspect(m2_blob, m2_inspected, err)
+  call expect_ok(err, "inspect mode=2")
+  call check(index(m2_inspected, '"container_mode":2') > 0, &
+      "inspect carries container_mode=2")
+  call itb_pipeline_free(m2_sender)
   call check(index(looked, '"nonce_bits":') == 0, &
       "lookup does not carry the inspection-only nonce_bits field")
   call check(index(looked, '"barrier_fill":') == 0, &
