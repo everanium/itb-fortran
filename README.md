@@ -13,7 +13,7 @@ embedded RPATH) — no runtime symbol loading. Every hash-name /
 MAC-name / cipher-name / profile-name is an opaque `character(*)`
 passed through to Go for validation; the binding carries no ITB
 construction logic. The public surface is one `itb_pipeline_t`
-handle (init / load / save / rekey / close / free, Single Message
+handle (init / init_keys / load / save / rekey / close / free, Single Message
 encrypt / decrypt, one-shot and whole-buffer stream pumps, incremental
 `itb_stream_t` sessions with write / end / read), an `itb_opts_t`
 query-string builder for init overrides, the profile-record entries
@@ -61,7 +61,7 @@ so `build.sh` runs `make clean` first.
   capture.
 - `src/itb_opts.f90` — `itb_opts_t` URL-query builder (opaque
   key/value pass-through).
-- `src/itb_pipeline.f90` — `itb_pipeline_t` lifecycle (init / load /
+- `src/itb_pipeline.f90` — `itb_pipeline_t` lifecycle (init / init_keys / load /
   save / rekey) + the buffer-in / buffer-out cipher paths + the
   profile-record entries.
 - `src/itb_stream.f90` — incremental `itb_stream_t` sessions +
@@ -73,7 +73,7 @@ so `build.sh` runs `make clean` first.
 ## Lifetime discipline
 
 Fortran has no destructors. Every successful `itb_pipeline_init` /
-`itb_pipeline_load` / `itb_pipeline_load_f` must be paired with
+`itb_pipeline_init_keys` / `itb_pipeline_load` / `itb_pipeline_load_f` must be paired with
 exactly one
 `itb_pipeline_free` call (libitb3 zeroes key material on free);
 `itb_pipeline_close` zeroes early without releasing the handle, and
@@ -126,6 +126,8 @@ call itb_opts_set(opts, "withWrapper", "false")
 call itb_opts_set(opts, "maxWorkers", "4")
 call itb_pipeline_init(sender, "singlemsg-triple-mac-v1", opts, err)
 ```
+
+`itb_pipeline_init_keys` constructs a Pipeline from caller-supplied master keys (8 for MAC profiles, 7 for No-MAC profiles, plus optional Parallax and Wrapper masters; each >= 16 bytes and pairwise distinct) instead of sampling fresh entropy via `itb_pipeline_init`.
 
 `itb_pipeline_rekey` rotates the parallax + wrapper masters
 mid-session (the eight ITB seeds and MAC key are fixed for the

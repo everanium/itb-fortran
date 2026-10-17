@@ -27,7 +27,8 @@ module itb_pipeline
   private
 
   public :: itb_pipeline_t
-  public :: itb_pipeline_init, itb_pipeline_load, itb_pipeline_load_f
+  public :: itb_pipeline_init, itb_pipeline_init_keys
+  public :: itb_pipeline_load, itb_pipeline_load_f
   public :: itb_pipeline_save, itb_pipeline_save_f, itb_pipeline_max_workers
   public :: itb_pipeline_rekey
   public :: itb_pipeline_close, itb_pipeline_free
@@ -82,6 +83,57 @@ contains
     handle = 0_c_intptr_t
     call buffer_call(BUF_INIT, blob, err, handle=handle, &
         p1=c_loc(c_prof(1)), p2=c_loc(c_opts(1)))
+    if (.not. itb_ok(err)) return
+    pipe%handle = handle
+  end subroutine
+
+  ! Constructs a Pipeline from caller-supplied master keys (8 for
+  ! MAC profiles, 7 for No-MAC profiles, plus optional Parallax and
+  ! Wrapper masters), packed contiguously in masters_flat with
+  ! per-key byte lengths in master_lens. Key counts, lengths, and
+  ! pairwise distinctness are validated by libitb3.
+  subroutine itb_pipeline_init_keys(pipe, profile, opts, masters_flat, &
+      master_lens, err)
+    type(itb_pipeline_t), intent(out)                 :: pipe
+    character(*), intent(in)                          :: profile
+    type(itb_opts_t), intent(in)                      :: opts
+    integer(c_int8_t), intent(in), target, contiguous :: masters_flat(:)
+    integer(c_size_t), intent(in), target, contiguous :: master_lens(:)
+    type(itb_error_t), intent(out)                    :: err
+    character(kind=c_char), allocatable, target :: c_prof(:), c_opts(:)
+    integer(c_int8_t), allocatable, target :: buf(:)
+    type(c_ptr)         :: flat_p, lens_p
+    integer(c_size_t)   :: flat_len, count_len, out_len, cap
+    integer(c_intptr_t) :: handle
+    integer(c_int)      :: rc
+
+    call itb_to_cstr(profile, c_prof)
+    call itb_to_cstr(itb_opts_query(opts), c_opts)
+    flat_p = c_null_ptr
+    flat_len = size(masters_flat, kind=c_size_t)
+    if (flat_len > 0_c_size_t) flat_p = c_loc(masters_flat(1))
+    lens_p = c_null_ptr
+    count_len = size(master_lens, kind=c_size_t)
+    if (count_len > 0_c_size_t) lens_p = c_loc(master_lens(1))
+
+    cap = int(BLOB_CAP, c_size_t)
+    allocate (buf(cap))
+    out_len = 0_c_size_t
+    handle = 0_c_intptr_t
+    rc = c_itb_triple_init_keys(c_loc(c_prof(1)), c_loc(c_opts(1)), &
+        flat_p, flat_len, lens_p, count_len, c_loc(buf(1)), cap, &
+        out_len, handle)
+    if (rc == ITB_STATUS_BUFFER_TOO_SMALL .and. out_len > cap) then
+      deallocate (buf)
+      cap = out_len
+      allocate (buf(cap))
+      out_len = 0_c_size_t
+      handle = 0_c_intptr_t
+      rc = c_itb_triple_init_keys(c_loc(c_prof(1)), c_loc(c_opts(1)), &
+          flat_p, flat_len, lens_p, count_len, c_loc(buf(1)), cap, &
+          out_len, handle)
+    end if
+    call itb_error_set(err, rc)
     if (.not. itb_ok(err)) return
     pipe%handle = handle
   end subroutine

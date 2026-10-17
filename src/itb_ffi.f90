@@ -82,6 +82,23 @@ module itb_ffi
       integer(c_int)           :: rc
     end function
 
+    function c_itb_triple_init_keys(profile, opts, masters_flat, &
+        masters_flat_len, master_lens, masters_count, blob_out, blob_cap, &
+        blob_len, out_handle) bind(C, name="ITB_Triple_InitKeys") result(rc)
+      import
+      type(c_ptr), value       :: profile
+      type(c_ptr), value       :: opts
+      type(c_ptr), value       :: masters_flat
+      integer(c_size_t), value :: masters_flat_len
+      type(c_ptr), value       :: master_lens
+      integer(c_size_t), value :: masters_count
+      type(c_ptr), value       :: blob_out
+      integer(c_size_t), value :: blob_cap
+      integer(c_size_t)        :: blob_len
+      integer(c_intptr_t)      :: out_handle
+      integer(c_int)           :: rc
+    end function
+
     function c_itb_triple_load(blob, blob_len, perm_master, &
         perm_master_len, wrap_master, wrap_master_len, masters_count, &
         out_handle) bind(C, name="ITB_Triple_Load") result(rc)

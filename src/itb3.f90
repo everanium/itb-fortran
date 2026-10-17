@@ -25,7 +25,7 @@
 
 module itb3
   use, intrinsic :: iso_c_binding, only: c_int8_t, c_int, c_int64_t, &
-      c_intptr_t
+      c_intptr_t, c_size_t
   use itb_status
   use itb_error
   use itb_opts
