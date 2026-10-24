@@ -83,6 +83,14 @@ contains
     handle = 0_c_intptr_t
     call buffer_call(BUF_INIT, blob, err, handle=handle, &
         p1=c_loc(c_prof(1)), p2=c_loc(c_opts(1)))
+    if (allocated(c_opts)) then
+      c_opts = c_null_char
+      deallocate (c_opts)
+    end if
+    if (allocated(blob)) then
+      blob = 0_c_int8_t
+      deallocate (blob)
+    end if
     if (.not. itb_ok(err)) return
     pipe%handle = handle
   end subroutine
@@ -124,6 +132,7 @@ contains
         flat_p, flat_len, lens_p, count_len, c_loc(buf(1)), cap, &
         out_len, handle)
     if (rc == ITB_STATUS_BUFFER_TOO_SMALL .and. out_len > cap) then
+      buf = 0_c_int8_t
       deallocate (buf)
       cap = out_len
       allocate (buf(cap))
@@ -133,6 +142,12 @@ contains
           flat_p, flat_len, lens_p, count_len, c_loc(buf(1)), cap, &
           out_len, handle)
     end if
+    if (allocated(c_opts)) then
+      c_opts = c_null_char
+      deallocate (c_opts)
+    end if
+    buf = 0_c_int8_t
+    deallocate (buf)
     call itb_error_set(err, rc)
     if (.not. itb_ok(err)) return
     pipe%handle = handle
@@ -250,7 +265,12 @@ contains
         p1=pm_p, n1=int(size(perm_master), c_size_t), &
         p2=wm_p, n2=int(size(wrap_master), c_size_t))
     if (.not. itb_ok(err)) return
-    if (present(blob)) call move_alloc(rotated, blob)
+    if (present(blob)) then
+      call move_alloc(rotated, blob)
+    else if (allocated(rotated)) then
+      rotated = 0_c_int8_t
+      deallocate (rotated)
+    end if
   end subroutine
 
   ! Zeroes the Pipeline's key material and marks it closed.
@@ -514,14 +534,21 @@ contains
     out_len = 0_c_size_t
     rc = buffer_dispatch(op, handle, p1, n1, p2, n2, c_loc(buf(1)), cap, out_len)
     if (rc == ITB_STATUS_BUFFER_TOO_SMALL .and. out_len > cap) then
+      buf = 0_c_int8_t
       deallocate (buf)
       cap = out_len
       allocate (buf(cap))
       rc = buffer_dispatch(op, handle, p1, n1, p2, n2, c_loc(buf(1)), cap, out_len)
     end if
     call itb_error_set(err, rc)
-    if (.not. itb_ok(err)) return
+    if (.not. itb_ok(err)) then
+      buf = 0_c_int8_t
+      deallocate (buf)
+      return
+    end if
     dst = buf(1_c_size_t:out_len)
+    if (out_len > 0_c_size_t) buf(1_c_size_t:out_len) = 0_c_int8_t
+    deallocate (buf)
   end subroutine
 
   function buffer_dispatch(op, handle, p1, n1, p2, n2, out_p, out_cap, &
