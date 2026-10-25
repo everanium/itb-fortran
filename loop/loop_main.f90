@@ -52,7 +52,7 @@ module loop_flags
   integer, parameter :: PARSE_HELP = 1
   integer, parameter :: PARSE_ERROR = 2
 
-  integer, parameter :: N_FLAGS = 25
+  integer, parameter :: N_FLAGS = 26
 
   ! One raw flag value. A deferred-length component rather than a
   ! fixed-width one so no ceiling of the utility's own can reject a
@@ -75,7 +75,8 @@ module loop_flags
       "barrier-fill     ", "blob-cycle-every ", "blob-mode        ", &
       "chunk-size       ", "drbg             ", "duration         ", &
       "gogc             ", "gomaxprocs       ", &
-      "goroutines       ", "hash             ", "iterations       ", &
+      "goroutines       ", "hash             ", "interlock        ", &
+      "iterations       ", &
       "json-output      ", "key-bits         ", "mac              ", &
       "memlimit         ", "memprofile       ", "nonce-bits       ", &
       "parallax         ", "payload-mode     ", "payload-size     ", &
@@ -85,14 +86,14 @@ module loop_flags
   character(len=8), parameter :: FLAG_TYPE(N_FLAGS) = [ &
       "int     ", "int     ", "int     ", "string  ", "string  ", &
       "duration", "int     ", &
-      "int     ", "int     ", "string  ", "int     ", "        ", &
+      "int     ", "int     ", "string  ", "string  ", "int     ", "        ", &
       "int     ", "string  ", "string  ", "string  ", "int     ", &
       "string  ", "string  ", "string  ", "string  ", "int     ", &
       "uint    ", "string  ", "string  "]
 
   integer, parameter :: FLAG_KIND(N_FLAGS) = [ &
       K_INT, K_INT64, K_INT, K_STRING, K_STRING, K_STRING, K_INT, &
-      K_INT, K_INT, K_STRING, K_INT64, K_BOOL, &
+      K_INT, K_INT, K_STRING, K_STRING, K_INT64, K_BOOL, &
       K_INT, K_STRING, K_STRING, K_STRING, K_INT, &
       K_STRING, K_STRING, K_STRING, K_STRING, K_INT64, &
       K_UINT64, K_STRING, K_STRING]
@@ -101,7 +102,8 @@ module loop_flags
       "0               ", "0               ", "1               ", &
       "0               ", "                ", "5m              ", &
       "0               ", "0               ", &
-      "3               ", "areion512       ", "0               ", &
+      "3               ", "areion512       ", "                ", &
+      "0               ", &
       "false           ", "0               ", "hmac-blake3     ", &
       "auto            ", "                ", "0               ", &
       "on              ", "fixed           ", "16MB            ", &
@@ -148,44 +150,47 @@ contains
     case (10)
       s = "inner ITB hash primitive name"
     case (11)
-      s = "fixed per-worker iteration count; 0 = duration-based"
+      s = "Interlocked Barrier chunk width: 48 | 168; empty ="// &
+          " profile default (48; 168 requires 512-bit hash)"
     case (12)
+      s = "fixed per-worker iteration count; 0 = duration-based"
+    case (13)
       s = "print the final summary as one compact JSON object"// &
           " instead of log lines"
-    case (13)
+    case (14)
       s = "per-seed key width in bits: 512 | 1024 | 2048;"// &
           " 0 = profile default (1024)"
-    case (14)
-      s = "MAC primitive name"
     case (15)
+      s = "MAC primitive name"
+    case (16)
       s = "Go heap soft limit: auto (1GiB when goroutines <= 3,"// &
           " else 256MiB, applied only when the runtime has no"// &
           " limit) or a size (e.g. 512MB)"
-    case (16)
+    case (17)
       s = "write a Go runtime heap profile (pprof) to this path at"// &
           " the end of the run; empty = none"
-    case (17)
+    case (18)
       s = "on-wire nonce width in bits: 128 | 256 | 512;"// &
           " 0 = profile default (512)"
-    case (18)
-      s = "parallax layer: on | off"
     case (19)
+      s = "parallax layer: on | off"
+    case (20)
       s = "plaintext content: fixed | rotating | pattern-zero |"// &
           " pattern-ff | pattern-ascii"
-    case (20)
-      s = "per-iteration plaintext size (e.g. 1MB / 16MB / 64MB)"
     case (21)
+      s = "per-iteration plaintext size (e.g. 1MB / 16MB / 64MB)"
+    case (22)
       s = "exercise this single registered triple profile"// &
           " (overrides --shape with the profile's surface);"// &
           " empty = shape-based profile pair"
-    case (22)
+    case (23)
       s = "rotate the parallax + wrapper masters via Rekey every N"// &
           " iterations per worker; 0 = never"
-    case (23)
+    case (24)
       s = "deterministic plaintext RNG seed for bug reproduction,"// &
           " NOT for security testing (pipeline keys stay"// &
           " CSPRNG-drawn); 0 = crypto/rand plaintexts"
-    case (24)
+    case (25)
       s = "cipher surface to exercise: stream | message |"// &
           " stream_one_shot | both"
     case default
@@ -361,7 +366,7 @@ contains
       call err_line("--duration must be positive, got "//text)
       return
     end if
-    cfg%iterations = as_int64(raw(11)%text)
+    cfg%iterations = as_int64(raw(12)%text)
     if (cfg%iterations < 0_c_int64_t) then
       call err_line("--iterations must be >= 0, got "//itoa(cfg%iterations))
       return
@@ -377,9 +382,9 @@ contains
     ! which the shared library permits after construction, so
     ! --goroutines is the thread count verbatim, never clamped.
     cfg%workers = cfg%workers_requested
-    if (.not. parse_shape(raw(24)%text, cfg%shape)) then
+    if (.not. parse_shape(raw(25)%text, cfg%shape)) then
       call err_line("--shape must be stream | message | stream_one_shot "// &
-                    '| both, got "'//raw(24)%text//'"')
+                    '| both, got "'//raw(25)%text//'"')
       return
     end if
     if (.not. hash_registered(raw(10)%text)) then
@@ -389,24 +394,24 @@ contains
     end if
     cfg%hash = raw(10)%text
     ! Validated by Init: the C ABI enumerates no MAC names.
-    cfg%mac = raw(14)%text
-    if (.not. parse_size(raw(20)%text, cfg%payload)) then
-      call err_line('--payload-size: invalid size "'//raw(20)%text//'"')
+    cfg%mac = raw(15)%text
+    if (.not. parse_size(raw(21)%text, cfg%payload)) then
+      call err_line('--payload-size: invalid size "'//raw(21)%text//'"')
       return
     end if
     if (cfg%payload < 1_c_int64_t) then
       call err_line("--payload-size must be at least 1 byte")
       return
     end if
-    if (raw(15)%text == "auto") then
+    if (raw(16)%text == "auto") then
       cfg%memlimit_auto = .true.
       if (cfg%workers <= 3) then
         cfg%memlimit = 1073741824_c_int64_t
       else
         cfg%memlimit = 268435456_c_int64_t
       end if
-    else if (.not. parse_size(raw(15)%text, cfg%memlimit)) then
-      call err_line('--memlimit: invalid size "'//raw(15)%text//'"')
+    else if (.not. parse_size(raw(16)%text, cfg%memlimit)) then
+      call err_line('--memlimit: invalid size "'//raw(16)%text//'"')
       return
     end if
     cfg%gogc = int(as_int64(raw(7)%text))
@@ -415,20 +420,20 @@ contains
                     itoa(int(cfg%gogc, c_int64_t)))
       return
     end if
-    if (.not. parse_on_off(raw(18)%text, cfg%parallax)) then
-      call err_line('--parallax must be on | off, got "'//raw(18)%text//'"')
+    if (.not. parse_on_off(raw(19)%text, cfg%parallax)) then
+      call err_line('--parallax must be on | off, got "'//raw(19)%text//'"')
       return
     end if
-    if (.not. parse_on_off(raw(25)%text, cfg%wrapper)) then
-      call err_line('--wrapper must be on | off, got "'//raw(25)%text//'"')
+    if (.not. parse_on_off(raw(26)%text, cfg%wrapper)) then
+      call err_line('--wrapper must be on | off, got "'//raw(26)%text//'"')
       return
     end if
-    cfg%profile = raw(21)%text
+    cfg%profile = raw(22)%text
     if (len(cfg%profile) > 0) then
       if (.not. profile_surface(cfg%profile, surface)) return
       cfg%shape = narrow_shape(cfg%shape, surface)
     end if
-    cfg%key_bits = int(as_int64(raw(13)%text))
+    cfg%key_bits = int(as_int64(raw(14)%text))
     select case (cfg%key_bits)
     case (0, 512, 1024, 2048)
     case default
@@ -437,7 +442,7 @@ contains
                     itoa(int(cfg%key_bits, c_int64_t)))
       return
     end select
-    cfg%nonce_bits = int(as_int64(raw(17)%text))
+    cfg%nonce_bits = int(as_int64(raw(18)%text))
     select case (cfg%nonce_bits)
     case (0, 128, 256, 512)
     case default
@@ -466,6 +471,15 @@ contains
     end select
     ! Validated by Init: the C ABI enumerates no DRBG names.
     cfg%drbg = raw(5)%text
+    cfg%interlock = raw(11)%text
+    select case (cfg%interlock)
+    case ("", "48", "168")
+    case default
+      call err_line("--interlock must be 48 | 168 "// &
+                    '(or empty = profile default), got "'// &
+                    cfg%interlock//'"')
+      return
+    end select
     if (.not. parse_size(raw(4)%text, cfg%chunk_size)) then
       call err_line('--chunk-size: invalid size "'//raw(4)%text//'"')
       return
@@ -476,7 +490,7 @@ contains
                     itoa(int(cfg%gomaxprocs, c_int64_t)))
       return
     end if
-    cfg%rekey_every = as_int64(raw(22)%text)
+    cfg%rekey_every = as_int64(raw(23)%text)
     if (cfg%rekey_every < 0_c_int64_t) then
       call err_line("--rekey-every must be >= 0, got "//itoa(cfg%rekey_every))
       return
@@ -487,15 +501,15 @@ contains
                     itoa(cfg%blob_cycle_every))
       return
     end if
-    if (.not. parse_payload_mode(raw(19)%text, cfg%payload_mode)) then
+    if (.not. parse_payload_mode(raw(20)%text, cfg%payload_mode)) then
       call err_line("--payload-mode must be fixed | rotating | "// &
                     "pattern-zero | pattern-ff | pattern-ascii, got "// &
-                    '"'//raw(19)%text//'"')
+                    '"'//raw(20)%text//'"')
       return
     end if
-    if (.not. parse_u64(raw(23)%text, cfg%seed)) cfg%seed = 0_c_int64_t
-    cfg%json_output = (raw(12)%text == "true")
-    cfg%memprofile = raw(16)%text
+    if (.not. parse_u64(raw(24)%text, cfg%seed)) cfg%seed = 0_c_int64_t
+    cfg%json_output = (raw(13)%text == "true")
+    cfg%memprofile = raw(17)%text
     outcome = PARSE_OK
   end function
 
@@ -698,7 +712,7 @@ program loop_main
                 " payload-mode="//payload_mode_name(cfg%payload_mode)// &
                 " seed="//u64toa(cfg%seed)// &
                 " json-output="//truth(cfg%json_output)// &
-                blob_mode_suffix()//drbg_suffix())
+                blob_mode_suffix()//drbg_suffix()//interlock_suffix())
   call log_line("policy: microbatch-tiers="// &
                 policy_label("ITB_MICROBATCH_TIERS")// &
                 " hashpool-starters="// &
@@ -840,6 +854,13 @@ contains
     if (len(cfg%drbg) > 0) s = " drbg="//cfg%drbg
   end function
 
+  ! The overrides-line entry for --interlock, present only when non-empty.
+  function interlock_suffix() result(s)
+    character(:), allocatable :: s
+    s = ""
+    if (len(cfg%interlock) > 0) s = " interlock="//cfg%interlock
+  end function
+
   function truth(b) result(s)
     logical, intent(in)       :: b
     character(:), allocatable :: s
@@ -912,7 +933,7 @@ contains
   subroutine log_pipeline_initialised(profile, blob)
     character(*), intent(in)      :: profile
     integer(c_int8_t), intent(in) :: blob(:)
-    character(:), allocatable :: json, line, drbg
+    character(:), allocatable :: json, line, drbg, interlock
     type(itb_error_t)         :: ierr
     integer(c_int64_t)        :: container_mode
 
@@ -924,6 +945,7 @@ contains
       return
     end if
     drbg = record_str(json, "drbg")
+    interlock = record_str(json, "interlock")
     container_mode = record_int(json, "container_mode")
     line = "pipeline initialised: profile="//profile//" blob="// &
                   itoa(int(size(blob, kind=c_int64_t), c_int64_t))// &
@@ -939,6 +961,7 @@ contains
       line = line//" container-mode="//itoa(container_mode)
     end if
     if (drbg /= "-") line = line//" drbg="//drbg
+    if (interlock /= "-") line = line//" interlock="//interlock
     call log_line(line)
   end subroutine
 
@@ -1029,6 +1052,7 @@ contains
     call itb_opts_set(opts, "barrierFill", &
                       itoa(int(cfg%barrier_fill, c_int64_t)))
     call itb_opts_set(opts, "drbg", cfg%drbg)
+    call itb_opts_set(opts, "interlock", cfg%interlock)
     call itb_opts_set(opts, "chunkSize", itoa(cfg%chunk_size))
     if (len(cfg%profile) > 0) then
       filled = fill_keystream_layers(cfg%profile, opts)

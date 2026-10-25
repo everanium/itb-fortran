@@ -121,6 +121,7 @@ needs no options of its own:
 
 ```fortran
 call itb_opts_set(opts, "mode", "2")
+call itb_opts_set(opts, "interlock", "168") ! "48" | "168" ("" = default 48-bit; "168" requires a 512-bit hash)
 call itb_opts_set(opts, "chunkSize", "65536")
 call itb_opts_set(opts, "withWrapper", "false")
 call itb_opts_set(opts, "maxWorkers", "4")

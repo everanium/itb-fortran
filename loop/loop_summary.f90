@@ -317,6 +317,7 @@ contains
       call itb_drbg_auto_tier(auto_tier, tier_err)
       if (.not. itb_ok(tier_err)) auto_tier = ""
       text = text//',"drbg_auto_tier":'//json_string(auto_tier)
+      text = text//',"interlock":'//json_string(cfg%interlock)
       text = text//',"chunk_size_bytes":'//itoa(cfg%chunk_size)
       text = text//',"barrier_fill":'//itoa(int(cfg%barrier_fill, c_int64_t))
       text = text//',"parallax":"'//on_off(cfg%parallax)//'"'

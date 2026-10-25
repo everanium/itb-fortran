@@ -125,6 +125,7 @@ program test_persist
   call itb_pipeline_free(receiver)
   call itb_pipeline_free(sender)
   call drbg_cases()
+  call interlock_cases()
   call test_done("test_persist")
 
 contains
@@ -208,6 +209,49 @@ contains
     call expect_ok(err, "lookup shipped")
     call check(index(dlooked, '"drbg"') == 0, "shipped lookup omits drbg")
     call itb_pipeline_free(dsend)
+  end subroutine
+
+  subroutine interlock_cases()
+    type(itb_opts_t)     :: il_opts, bad_opts
+    type(itb_pipeline_t) :: il_send, il_recv, bad_pipe
+    integer(c_int8_t), allocatable :: il_blob(:), il_wire(:), il_back(:)
+    character(:), allocatable :: il_json
+
+    il_opts = itb_opts_t()
+    call itb_opts_set(il_opts, "interlock", "168")
+    call itb_pipeline_init(il_send, "singlemsg-triple-mac-v1", il_opts, err)
+    call expect_ok(err, "init interlock=168")
+    call itb_encrypt_message(il_send, plain, il_wire, err)
+    call expect_ok(err, "interlock 168 encrypt")
+    call itb_decrypt_message(il_send, il_wire, il_back, err)
+    call expect_ok(err, "interlock 168 self decrypt")
+    call check_bytes_equal(il_back, plain, "interlock 168 self round trip")
+
+    call itb_pipeline_save(il_send, il_blob, err)
+    call expect_ok(err, "save interlock=168")
+    call itb_inspect(il_blob, il_json, err)
+    call expect_ok(err, "inspect interlock=168")
+    call check(index(il_json, '"interlock":"168"') > 0, &
+        "inspect carries interlock=168")
+
+    call itb_pipeline_load(il_recv, il_blob, err)
+    call expect_ok(err, "load interlock=168")
+    call itb_decrypt_message(il_recv, il_wire, il_back, err)
+    call expect_ok(err, "interlock 168 loaded decrypt")
+    call check_bytes_equal(il_back, plain, "interlock 168 loaded round trip")
+    call itb_pipeline_free(il_recv)
+    call itb_pipeline_free(il_send)
+
+    bad_opts = itb_opts_t()
+    call itb_opts_set(bad_opts, "innerHash", "blake3")
+    call itb_opts_set(bad_opts, "interlock", "168")
+    call itb_pipeline_init(bad_pipe, "singlemsg-triple-mac-v1", bad_opts, err)
+    call expect_status(err, ITB_STATUS_BAD_INPUT, "interlock 168 on 256-bit hash")
+
+    bad_opts = itb_opts_t()
+    call itb_opts_set(bad_opts, "interlock", "96")
+    call itb_pipeline_init(bad_pipe, "singlemsg-triple-mac-v1", bad_opts, err)
+    call expect_status(err, ITB_STATUS_BAD_INPUT, "interlock 96")
   end subroutine
 
 end program
