@@ -129,7 +129,7 @@ contains
           " iterations per worker; 0 = never"
     case (3)
       s = "container floor sizing mode: 1 (per-region, default)"// &
-          " | 2 (per-container)"
+          " | 2 (per-container) | 3 (gauss-posit)"
     case (4)
       s = "streaming chunk-size budget (e.g. 4MB); 0 = profile"// &
           " default; inert for pure message shape"
@@ -453,10 +453,10 @@ contains
     end select
     cfg%blob_mode = int(as_int64(raw(3)%text))
     select case (cfg%blob_mode)
-    case (1, 2)
+    case (1, 2, 3)
     case default
       call err_line("--blob-mode must be 1 (per-region) | 2 "// &
-                    "(per-container), got "// &
+                    "(per-container) | 3 (gauss-posit), got "// &
                     itoa(int(cfg%blob_mode, c_int64_t)))
       return
     end select
@@ -957,7 +957,7 @@ contains
                   " mac="//record_str(json, "mac")// &
                   " parallax="//on_off(record_bool(json, "parallax"))// &
                   " wrapper="//on_off(record_bool(json, "wrapper"))
-    if (container_mode == 2_c_int64_t) then
+    if (container_mode == 2_c_int64_t .or. container_mode == 3_c_int64_t) then
       line = line//" container-mode="//itoa(container_mode)
     end if
     if (drbg /= "-") line = line//" drbg="//drbg
